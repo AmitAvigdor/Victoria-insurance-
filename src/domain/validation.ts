@@ -11,15 +11,16 @@ const date = z
   )
 export const customerSchema = z.object({
   first_name: required(80),
-  last_name: required(80),
+  last_name: text(80),
+  import_key: text(700).optional(),
   identification_number: z
     .string()
     .trim()
-    .regex(/^\d{9}$/, 'מספר זהות חייב להכיל 9 ספרות'),
+    .regex(/^(?:\d{9})?$/, 'מספר זהות חייב להכיל 9 ספרות או להישאר ריק'),
   phone: z
     .string()
     .trim()
-    .regex(/^[+\d\s()-]{7,25}$/, 'יש להזין מספר טלפון תקין'),
+    .regex(/^(?:[+\d\s()-]{7,25})?$/, 'יש להזין מספר טלפון תקין או להשאיר ריק'),
   email: z
     .union([z.literal(''), z.email('כתובת האימייל אינה תקינה')])
     .transform((v) => v.toLowerCase()),
@@ -31,7 +32,12 @@ export const policySchema = z
   .object({
     customer_id: z.uuid('יש לבחור לקוח'),
     insurance_company: required(100),
-    policy_number: required(100),
+    policy_number: text(100),
+    vehicle_registration: text(50).optional(),
+    compulsory_value: text(300).optional(),
+    comprehensive_value: text(300).optional(),
+    commission: text(300).optional(),
+    import_key: text(700).optional(),
     insurance_type: z.enum(insuranceTypes),
     start_date: date,
     end_date: date,
@@ -39,7 +45,8 @@ export const policySchema = z
       .number()
       .finite()
       .min(0, 'פרמיה חייבת להיות חיובית או אפס')
-      .max(999999999, 'הסכום גדול מדי'),
+      .max(999999999, 'הסכום גדול מדי')
+      .nullable(),
     status: z.enum(policyStatuses),
     notes: text(5000),
   })

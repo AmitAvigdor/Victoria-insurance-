@@ -10,9 +10,12 @@ import {
   type TaskInput,
 } from './types'
 import { MAX_IMPORT_ROWS, type ImportCell, type ImportSheet } from './import-workbook'
+import { today } from './dates'
+import { fullName } from './types'
 
-export type ImportMode = 'customers' | 'combined' | 'policies' | 'tasks'
+export type ImportMode = 'customers' | 'combined' | 'policies' | 'tasks' | 'vehicles'
 export const importModes: Record<ImportMode, string> = {
+  vehicles: 'ביטוחי רכב — מבוטח, חובה, מקיף ורישוי',
   customers: 'לקוחות',
   combined: 'לקוחות ופוליסות באותה שורה',
   policies: 'פוליסות ללקוחות קיימים',
@@ -21,7 +24,7 @@ export const importModes: Record<ImportMode, string> = {
 const customerFields = [
   ['first_name', 'שם פרטי', 'first name'],
   ['last_name', 'שם משפחה', 'last name'],
-  ['full_name', 'שם מלא', 'שם לקוח', 'שם מבוטח', 'שם', 'full name'],
+  ['full_name', 'שם מלא', 'שם לקוח', 'שם מבוטח', 'שם המבוטח', 'שם', 'full name'],
   ['phone', 'טלפון', 'נייד', 'טלפון נייד', 'מספר טלפון', 'mobile'],
   ['email', 'אימייל', 'דואל', 'דואר אלקטרוני', 'e-mail'],
   ['date_of_birth', 'תאריך לידה', 'לידה', 'birth date'],
@@ -29,11 +32,11 @@ const customerFields = [
   ['notes', 'הערות לקוח', 'הערות'],
 ] as const
 const policyFields = [
-  ['insurance_company', 'חברת ביטוח', 'מבטח'],
+  ['insurance_company', 'חברת ביטוח', 'חברת הביטוח', 'מבטח'],
   ['policy_number', 'מספר פוליסה', 'מס פוליסה', 'פוליסה'],
   ['insurance_type', 'סוג ביטוח', 'ענף'],
-  ['start_date', 'תאריך התחלה', 'תחילת ביטוח', 'מתאריך'],
-  ['end_date', 'תאריך סיום', 'סיום ביטוח', 'עד תאריך', 'תאריך חידוש'],
+  ['start_date', 'תאריך התחלה', 'תחילת ביטוח', 'תחילת הביטוח', 'מתאריך'],
+  ['end_date', 'תאריך סיום', 'סיום ביטוח', 'סיום הביטוח', 'עד תאריך', 'תאריך חידוש'],
   ['premium', 'פרמיה שנתית', 'פרמיה', 'פרמיה שנתית (₪)'],
   ['policy_status', 'סטטוס פוליסה', 'סטטוס'],
   ['policy_notes', 'הערות פוליסה'],
@@ -45,7 +48,19 @@ const taskFields = [
   ['priority', 'עדיפות'],
   ['task_status', 'סטטוס משימה', 'סטטוס'],
 ] as const
+const vehicleFields = [
+  customerFields[2],
+  policyFields[0],
+  policyFields[3],
+  policyFields[4],
+  ['compulsory_value', 'חובה', 'ביטוח חובה'],
+  ['comprehensive_value', 'מקיף', 'ביטוח מקיף'],
+  ['vehicle_registration', 'מספר רישוי', "מס' רישוי", 'מס רישוי', 'מספר רכב', 'מס רכב'],
+  ['commission', 'עמלה'],
+  ['policy_notes', 'הערות', 'הערות פוליסה'],
+] as const
 export function fieldsFor(mode: ImportMode): readonly (readonly string[])[] {
+  if (mode === 'vehicles') return vehicleFields
   return [
     ['identification_number', 'מספר זהות', 'תז', 'תעודת זהות', 'מספר תעודת זהות'],
     ...(mode === 'customers' || mode === 'combined' ? customerFields : []),
@@ -54,7 +69,22 @@ export function fieldsFor(mode: ImportMode): readonly (readonly string[])[] {
   ]
 }
 export type Mapping = Record<string, number>
-const normalizeHeader = (value: string) => value.toLowerCase().replace(/[\s"'״׳_.\-:()]/g, '')
+const normalizeHeader = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/&#(?:x0*a0|160);|&nbsp;/gi, '')
+    .replace(/[\s"'״׳_.\-:()]/g, '')
+export function detectImportMode(
+  headers: string[],
+  fallback: ImportMode = 'customers',
+): ImportMode {
+  const mapping = suggestMapping(headers, 'vehicles')
+  return mapping.full_name != null &&
+    mapping.vehicle_registration != null &&
+    (mapping.compulsory_value != null || mapping.comprehensive_value != null)
+    ? 'vehicles'
+    : fallback
+}
 export function suggestMapping(headers: string[], mode: ImportMode): Mapping {
   const used = new Set<number>()
   const mapping: Mapping = {}
@@ -77,6 +107,7 @@ export interface ImportOptions {
   mode: ImportMode
   mapping: Mapping
   keepExtra: boolean
+  vehicleLinks?: Record<number, string>
 }
 export interface ImportRow {
   rowNumber: number
@@ -84,6 +115,7 @@ export interface ImportRow {
   name: string
   customer?: CustomerInput
   customerId?: string
+  customerKey?: string
   policy?: Omit<PolicyInput, 'customer_id'>
   task?: Omit<TaskInput, 'customer_id' | 'policy_id'>
   errors: string[]
@@ -119,6 +151,7 @@ export function importPremium(cell: ImportCell): number {
 }
 
 export function prepareImport(options: ImportOptions, snapshot: Snapshot): ImportPlan {
+  if (options.mode === 'vehicles') return prepareVehicleImport(options, snapshot)
   const { sheet, headerRow, mapping, mode, keepExtra } = options
   const errors: string[] = []
   const selected = Object.values(mapping).filter((v) => v >= 0)
@@ -230,6 +263,10 @@ export function prepareImport(options: ImportOptions, snapshot: Snapshot): Impor
     const hasPolicy =
       mode === 'policies' || (mode === 'combined' && policyFields.some(([key]) => !!value(key)))
     if (hasPolicy) {
+      if (!value('policy_number'))
+        row.errors.push(
+          'מספר פוליסה: יש להזין מספר פוליסה, או לבחור במסלול ייבוא ביטוחי רכב ללא מספר פוליסה',
+        )
       const parsed = policySchema.safeParse({
         customer_id: placeholderId,
         insurance_company: value('insurance_company'),
@@ -285,6 +322,171 @@ export function prepareImport(options: ImportOptions, snapshot: Snapshot): Impor
       if (row.customer) plannedCustomers.set(row.identification, row.customer)
       if (row.policy) policyOwners.set(policyKey(row.policy), row.identification)
       if (row.task) taskKeys.add(taskKey({ ...row.task, customer_id: row.customerId || null }))
+    }
+    rows.push(row)
+  })
+  if (!rows.length) errors.push('לא נמצאו שורות נתונים אחרי שורת הכותרות')
+  return { rows, errors }
+}
+
+function prepareVehicleImport(options: ImportOptions, snapshot: Snapshot): ImportPlan {
+  const { sheet, headerRow, mapping, keepExtra, vehicleLinks = {} } = options
+  const rows: ImportRow[] = []
+  const errors: string[] = []
+  const headers = headersFor(sheet, headerRow)
+  const labels = Object.fromEntries(vehicleFields.map(([key, label]) => [key, label]))
+  const selected = Object.values(mapping)
+  if (new Set(selected).size !== selected.length) errors.push('אין לשייך עמודה אחת ליותר משדה אחד')
+  for (const key of [
+    'full_name',
+    'insurance_company',
+    'start_date',
+    'end_date',
+    'vehicle_registration',
+  ]) {
+    if (mapping[key] == null) errors.push(`יש לשייך עמודה לשדה ${labels[key]}`)
+  }
+  if (sheet.rows.length - headerRow - 1 > MAX_IMPORT_ROWS)
+    errors.push('עד 10,000 שורות נתונים בכל ייבוא')
+  if (errors.length) return { rows, errors }
+  const existingPolicies = new Map(
+    snapshot.policies.filter((p) => p.import_key).map((p) => [p.import_key!, p]),
+  )
+  const importedCustomers = new Map(
+    snapshot.customers.filter((c) => c.import_key).map((c) => [c.import_key!, c]),
+  )
+  const customersById = new Map(snapshot.customers.map((c) => [c.id, c]))
+  const seen = new Set<string>()
+  const normalized = (value: string) => value.trim().replace(/\s+/g, ' ').toLowerCase()
+  sheet.rows.slice(headerRow + 1).forEach((cells, index) => {
+    if (!cells.some((c) => c.text.trim() || c.error)) return
+    const get = (key: string) => cells[mapping[key]] || blank
+    const value = (key: string) => asText(get(key))
+    const rowNumber = headerRow + index + 2
+    const name = value('full_name').replace(/\s+/g, ' ')
+    const start = importDate(get('start_date')),
+      end = importDate(get('end_date'))
+    const registration = value('vehicle_registration')
+    const sourceKey = JSON.stringify([
+      'vehicle-v1',
+      normalized(name),
+      normalized(value('insurance_company')),
+      start,
+      end,
+      normalized(registration).replace(/[\s-]/g, ''),
+    ])
+    const row: ImportRow = {
+      rowNumber,
+      name,
+      identification: '',
+      customerKey: `import:${sourceKey}`,
+      errors: [],
+      warnings: [],
+      action: 'ready',
+    }
+    cells.forEach((cell, i) => {
+      if (cell.error && (selected.includes(i) || keepExtra))
+        row.errors.push(`${headers[i]}: ${cell.error}`)
+    })
+    if (!name) row.errors.push('שם המבוטח חסר')
+    if (!registration)
+      row.errors.push('מספר הרישוי חסר; נדרש לזיהוי שורת הביטוח ולמניעת ייבוא חוזר')
+    const extra = keepExtra
+      ? cells
+          .flatMap((c, i) =>
+            !selected.includes(i) && c.text.trim() ? [`${headers[i]}: ${c.text.trim()}`] : [],
+          )
+          .join('\n')
+      : ''
+    const parsedPolicy = policySchema.safeParse({
+      customer_id: placeholderId,
+      insurance_company: value('insurance_company'),
+      policy_number: '',
+      insurance_type: 'רכב',
+      start_date: start,
+      end_date: end,
+      premium: null,
+      status: end < today() ? 'הסתיימה' : 'פעילה',
+      vehicle_registration: registration,
+      compulsory_value: value('compulsory_value'),
+      comprehensive_value: value('comprehensive_value'),
+      commission: value('commission'),
+      notes: [value('policy_notes'), extra].filter(Boolean).join('\n'),
+      import_key: sourceKey,
+    })
+    if (!parsedPolicy.success)
+      parsedPolicy.error.issues.forEach((issue) =>
+        row.errors.push(`${labels[String(issue.path[0])] || 'פרטי ביטוח'}: ${issue.message}`),
+      )
+    else {
+      const { customer_id, ...policy } = parsedPolicy.data
+      void customer_id
+      row.policy = policy
+    }
+
+    const previousPolicy = existingPolicies.get(sourceKey)
+    const partialCustomer = importedCustomers.get(sourceKey)
+    const choice = vehicleLinks[rowNumber] || ''
+    let existing = previousPolicy ? customersById.get(previousPolicy.customer_id) : partialCustomer
+    if (choice.startsWith('record:')) {
+      const chosen = customersById.get(choice.slice(7))
+      if (!chosen) row.errors.push('הלקוח שנבחר אינו זמין')
+      else if (existing && existing.id !== chosen.id)
+        row.errors.push(
+          'השורה כבר שויכה ללקוח אחר בייבוא קודם; לא ניתן לשנות שיוך באמצעות ייבוא חוזר',
+        )
+      else existing = chosen
+    } else if (choice.startsWith('row:')) {
+      const previousRow = rows.find(
+        (r) => r.rowNumber === Number(choice.slice(4)) && r.action !== 'error',
+      )
+      if (!previousRow?.customerKey) row.errors.push('שורת המבוטח שנבחרה אינה מוכנה לייבוא')
+      else if (existing && previousRow.customerId !== existing.id)
+        row.errors.push('השורה כבר שויכה בייבוא קודם; יש לבחור את הלקוח הקיים או את ברירת המחדל')
+      else {
+        row.customerKey = previousRow.customerKey
+        row.customerId = previousRow.customerId
+        row.warnings.push(`ישויך למבוטח משורה ${previousRow.rowNumber}: ${previousRow.name}`)
+      }
+    } else if (choice) row.errors.push('שיוך המבוטח אינו תקין')
+    if (existing) {
+      row.customerId = existing.id
+      row.customerKey = `record:${existing.id}`
+      row.identification = existing.identification_number
+      if (existing.archived_at) row.errors.push('הלקוח בארכיון; יש לשחזר אותו לפני הייבוא')
+      else row.warnings.push(`ישויך ללקוח הקיים: ${fullName(existing)}`)
+    } else if (!choice.startsWith('row:')) {
+      const [first, ...rest] = name.split(' ')
+      const parsedCustomer = customerSchema.safeParse({
+        first_name: first,
+        last_name: rest.join(' '),
+        identification_number: '',
+        phone: '',
+        email: '',
+        date_of_birth: null,
+        address: '',
+        notes: '',
+        import_key: sourceKey,
+      })
+      if (!parsedCustomer.success)
+        parsedCustomer.error.issues.forEach((issue) =>
+          row.errors.push(`פרטי מבוטח: ${issue.message}`),
+        )
+      else row.customer = parsedCustomer.data
+      row.warnings.push(
+        'ייווצר לקוח חדש ללא ת״ז וטלפון. אפשר לבחור שיוך ללקוח קיים או לשורה קודמת.',
+      )
+      if (snapshot.customers.some((c) => normalized(fullName(c)) === normalized(name)))
+        row.warnings.push('נמצא במערכת שם זהה; לא בוצע איחוד אוטומטי. בדקו את שיוך המבוטח.')
+    }
+    if (previousPolicy || seen.has(sourceKey)) {
+      row.customer = undefined
+      row.policy = undefined
+      row.warnings.push('שורה לאותו מבוטח, רכב, חברה ותקופת ביטוח כבר קיימת; הנתונים לא יעודכנו')
+      row.action = row.errors.length ? 'error' : 'skip'
+    } else {
+      row.action = row.errors.length ? 'error' : 'ready'
+      if (row.action === 'ready') seen.add(sourceKey)
     }
     rows.push(row)
   })

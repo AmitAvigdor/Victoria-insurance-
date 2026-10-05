@@ -65,10 +65,18 @@ export const demoRepository: Repository = {
     return mutate((s) => {
       if (
         s.customers.some(
-          (c) => c.identification_number === parsed.identification_number && c.id !== id,
+          (c) =>
+            !!parsed.identification_number &&
+            c.identification_number === parsed.identification_number &&
+            c.id !== id,
         )
       )
         throw new Error('לקוח עם מספר הזהות הזה כבר קיים')
+      if (
+        parsed.import_key &&
+        s.customers.some((c) => c.import_key === parsed.import_key && c.id !== id)
+      )
+        throw new Error('הלקוח משורת הייבוא הזו כבר קיים')
       const existing = s.customers.find((c) => c.id === id)
       if (id && !existing) throw new Error('הלקוח אינו זמין')
       const customer: Customer = {
@@ -104,12 +112,18 @@ export const demoRepository: Repository = {
       if (
         s.policies.some(
           (p) =>
+            !!parsed.policy_number &&
             p.policy_number === parsed.policy_number &&
             p.insurance_company === parsed.insurance_company &&
             p.id !== id,
         )
       )
         throw new Error('מספר הפוליסה כבר קיים בחברה שנבחרה')
+      if (
+        parsed.import_key &&
+        s.policies.some((p) => p.import_key === parsed.import_key && p.id !== id)
+      )
+        throw new Error('שורת הביטוח הזו כבר יובאה')
       const existing = s.policies.find((p) => p.id === id)
       if (id && !existing) throw new Error('הפוליסה אינה זמינה')
       if (existing && existing.customer_id !== parsed.customer_id)

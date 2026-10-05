@@ -139,6 +139,49 @@ try {
     premium: 100,
   }
   const policy = ok(await a.from('policies').insert(policyInput).select().single())
+  await check(
+    'vehicle imports preserve missing identifiers and raw values with duplicate protection',
+    async () => {
+      const inputs = ['first', 'second'].map((key) => ({
+        agency_id: agencies[0],
+        first_name: 'בדיקת רכב',
+        last_name: '',
+        identification_number: '',
+        phone: '',
+        import_key: `hosted-vehicle-${key}`,
+      }))
+      const imported = ok(await a.from('customers').insert(inputs).select())
+      assert.equal(imported.length, 2)
+      assert.equal((await a.from('customers').insert(inputs[0])).error?.code, '23505')
+      const raw = {
+        ...policyInput,
+        customer_id: imported[0].id,
+        policy_number: '',
+        premium: null,
+        vehicle_registration: '12-345-67',
+        compulsory_value: '1,200',
+        comprehensive_value: 'יש כיסוי',
+        commission: '12%',
+        import_key: 'hosted-vehicle-policy',
+      }
+      const saved = ok(await a.from('policies').insert(raw).select().single())
+      assert.equal(saved.premium, null)
+      assert.equal(saved.policy_number, '')
+      assert.equal(saved.compulsory_value, '1,200')
+      assert.equal(saved.comprehensive_value, 'יש כיסוי')
+      assert.equal(saved.commission, '12%')
+      assert.equal((await a.from('policies').insert(raw)).error?.code, '23505')
+      assert.deepEqual(ok(await b.from('customers').select('id').eq('id', imported[0].id)), [])
+      assert.deepEqual(ok(await b.from('policies').select('id').eq('id', saved.id)), [])
+      assert.ok(
+        (
+          await a
+            .from('policies')
+            .insert({ ...raw, import_key: 'foreign-vehicle', customer_id: cb.id })
+        ).error,
+      )
+    },
+  )
   await check('policy edits persist and cross-agency customer links are rejected', async () => {
     ok(await colleague.from('policies').update({ premium: 200 }).eq('id', policy.id))
     assert.equal(

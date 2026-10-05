@@ -3,6 +3,7 @@ import { utils, write } from 'xlsx'
 import { readImportWorkbook } from './import-workbook'
 import {
   headersFor,
+  detectImportMode,
   importPremium,
   prepareImport,
   suggestMapping,
@@ -77,7 +78,11 @@ function memoryRepository(snapshot: Snapshot) {
   const repository = {
     load: vi.fn(async () => structuredClone(snapshot)),
     saveCustomer: vi.fn(async (input: CustomerInput) => {
-      const c = { ...record(), ...input }
+      const c = {
+        ...record(),
+        ...input,
+        id: snapshot.customers.length ? crypto.randomUUID() : record().id,
+      }
       snapshot.customers.push(c)
       return c
     }),
@@ -412,5 +417,159 @@ describe('import persistence and recovery', () => {
     )
     expect(badResult.rows[0].status).toBe('דולג')
     expect(calls.saveCustomer).not.toHaveBeenCalled()
+  })
+})
+
+const vehicleHeaders = [
+  'שם המבוטח\u00a0',
+  'חברת הביטוח\u00a0',
+  'תחילת הביטוח\u00a0',
+  'סיום הביטוח\u00a0',
+  'חובה',
+  'מקיף',
+  '',
+  "מס' רישוי -\u00a0",
+  'עמלה',
+  'הערות',
+]
+const vehicleRow = [
+  'דנה לוי',
+  'חברת בדיקה',
+  '01/01/2026',
+  '31/12/2026',
+  '1,200',
+  'יש כיסוי',
+  'מידע ללא כותרת',
+  '12-345-67',
+  '12%',
+  'הערה מקורית',
+]
+describe('vehicle workbook without identity, phone or policy number', () => {
+  it('detects the exact supplied headers including nonbreaking spaces', () => {
+    expect(detectImportMode(vehicleHeaders)).toBe('vehicles')
+    expect(suggestMapping(vehicleHeaders, 'vehicles')).toMatchObject({
+      full_name: 0,
+      insurance_company: 1,
+      start_date: 2,
+      end_date: 3,
+      compulsory_value: 4,
+      comprehensive_value: 5,
+      vehicle_registration: 7,
+      commission: 8,
+      policy_notes: 9,
+    })
+    expect(suggestMapping(['שם המבוטח&#xA0;'], 'vehicles').full_name).toBe(0)
+  })
+  it('preserves coverage, commission and unnamed cells without inventing numbers', () => {
+    const plan = prepareImport(options([vehicleHeaders, vehicleRow], 'vehicles'), empty())
+    expect(plan.errors).toEqual([])
+    expect(plan.rows[0].errors).toEqual([])
+    expect(plan.rows[0].customer).toMatchObject({
+      first_name: 'דנה',
+      last_name: 'לוי',
+      identification_number: '',
+      phone: '',
+    })
+    expect(plan.rows[0].policy).toMatchObject({
+      policy_number: '',
+      premium: null,
+      compulsory_value: '1,200',
+      comprehensive_value: 'יש כיסוי',
+      commission: '12%',
+      vehicle_registration: '12-345-67',
+      notes: 'הערה מקורית\nעמודה 7: מידע ללא כותרת',
+    })
+  })
+  it('does not merge two vehicles by name, but allows an explicit link to a prior row', () => {
+    const other = [...vehicleRow]
+    other[7] = '98-765-43'
+    const o = options([vehicleHeaders, vehicleRow, other], 'vehicles')
+    const independent = prepareImport(o, empty())
+    expect(independent.rows.filter((r) => r.customer)).toHaveLength(2)
+    o.vehicleLinks = { 3: 'row:2' }
+    const linked = prepareImport(o, empty())
+    expect(linked.rows.filter((r) => r.customer)).toHaveLength(1)
+    expect(linked.rows[1].customerKey).toBe(linked.rows[0].customerKey)
+    expect(linked.rows[1].action).toBe('ready')
+  })
+  it('requires an explicit selection to use an existing same-name customer', () => {
+    const snapshot = empty()
+    snapshot.customers.push({ ...record(), first_name: 'דנה', last_name: 'לוי' })
+    const o = options([vehicleHeaders, vehicleRow], 'vehicles')
+    expect(prepareImport(o, snapshot).rows[0].customer).toBeDefined()
+    o.vehicleLinks = { 2: `record:${record().id}` }
+    const row = prepareImport(o, snapshot).rows[0]
+    expect(row.customer).toBeUndefined()
+    expect(row.customerId).toBe(record().id)
+    snapshot.customers[0].archived_at = '2026-01-01'
+    expect(prepareImport(o, snapshot).rows[0].action).toBe('error')
+  })
+  it('reports bad dates, missing registrations and unavailable customer links', () => {
+    const missing = [...vehicleRow]
+    missing[7] = ''
+    expect(
+      prepareImport(options([vehicleHeaders, missing], 'vehicles'), empty()).rows[0].action,
+    ).toBe('error')
+    const badDate = [...vehicleRow]
+    badDate[2] = '31/02/2026'
+    expect(
+      prepareImport(options([vehicleHeaders, badDate], 'vehicles'), empty()).rows[0].action,
+    ).toBe('error')
+    const o = options([vehicleHeaders, vehicleRow], 'vehicles')
+    o.vehicleLinks = { 2: 'row:9' }
+    expect(prepareImport(o, empty()).rows[0].action).toBe('error')
+  })
+  it('persists missing values and safely skips duplicate/reimported source rows', async () => {
+    const snapshot = empty()
+    const { repository } = memoryRepository(snapshot)
+    const o = options([vehicleHeaders, vehicleRow, vehicleRow], 'vehicles')
+    const plan = prepareImport(o, snapshot)
+    expect(plan.rows.map((r) => r.action)).toEqual(['ready', 'skip'])
+    const result = await executeImport(repository, o, plan, vi.fn(), () => false)
+    expect(result).toMatchObject({ customers: 1, policies: 1 })
+    expect(snapshot.policies[0]).toMatchObject({
+      premium: null,
+      policy_number: '',
+      commission: '12%',
+    })
+    expect(prepareImport(o, snapshot).rows.map((r) => r.action)).toEqual(['skip', 'skip'])
+    o.sheet.rows[1][4] = { value: '9999', text: '9999' }
+    expect(prepareImport(o, snapshot).rows[0].action).toBe('skip')
+    expect(snapshot.policies[0].compulsory_value).toBe('1,200')
+  })
+  it('recovers after a partial save without creating another nameless-identity customer', async () => {
+    const snapshot = empty()
+    const { repository, calls } = memoryRepository(snapshot)
+    const other = [...vehicleRow]
+    other[7] = '98-765-43'
+    const o = options([vehicleHeaders, vehicleRow, other], 'vehicles')
+    o.vehicleLinks = { 3: 'row:2' }
+    calls.savePolicy.mockRejectedValueOnce(new Error('connection lost'))
+    const first = await executeImport(
+      repository,
+      o,
+      prepareImport(o, snapshot),
+      vi.fn(),
+      () => false,
+    )
+    expect(first).toMatchObject({ customers: 1, policies: 0 })
+    const retry = await executeImport(
+      repository,
+      o,
+      prepareImport(o, snapshot),
+      vi.fn(),
+      () => false,
+    )
+    expect(retry).toMatchObject({ customers: 0, policies: 2 })
+    expect(calls.saveCustomer).toHaveBeenCalledTimes(1)
+    expect(snapshot.policies[0].customer_id).toBe(snapshot.policies[1].customer_id)
+    expect(prepareImport(o, snapshot).rows.map((r) => r.action)).toEqual(['skip', 'skip'])
+  })
+  it('supports a one-word customer name without a fabricated surname', () => {
+    const single = [...vehicleRow]
+    single[0] = 'בדיקה'
+    const row = prepareImport(options([vehicleHeaders, single], 'vehicles'), empty()).rows[0]
+    expect(row.action).toBe('ready')
+    expect(row.customer?.last_name).toBe('')
   })
 })

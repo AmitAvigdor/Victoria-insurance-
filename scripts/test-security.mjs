@@ -47,6 +47,21 @@ try {
   await db.exec(
     `insert into auth.users values('${u}'),('${v}'); insert into public.agencies(id,name) values('${a}','Agency A'),('${b}','Agency B'); insert into public.profiles(id,agency_id,full_name) values('${u}','${a}','Agent A'),('${v}','${b}','Agent B'); insert into public.customers(id,agency_id,first_name,last_name,identification_number,phone) values('${ca}','${a}','דוד','כהן','000000001','0500000001'),('${cb}','${b}','נועה','לוי','000000001','0500000002'),('${ca2}','${a}','תמר','ברק','000000003','0500000003'); insert into public.policies(id,agency_id,customer_id,insurance_company,policy_number,insurance_type,start_date,end_date,premium) values('${pa}','${a}','${ca}','הראל','A1','רכב',current_date,current_date+10,100),('${pb}','${b}','${cb}','מגדל','B1','דירה',current_date,current_date+10,100); insert into public.tasks(id,agency_id,customer_id,policy_id,title,due_date) values('${ta}','${a}','${ca}','${pa}','A task',current_date),('${tb}','${b}','${cb}','${pb}','B task',current_date); insert into storage.objects(bucket_id,name) values('customer-documents','${a}/${ca}/${da}.pdf'),('customer-documents','${b}/${cb}/${dbId}.pdf'); insert into public.documents(id,agency_id,customer_id,file_name,file_path,document_type,file_size,mime_type,uploaded_by) values('${da}','${a}','${ca}','a.pdf','${a}/${ca}/${da}.pdf','פוליסה',100,'application/pdf','${u}'),('${dbId}','${b}','${cb}','b.pdf','${b}/${cb}/${dbId}.pdf','פוליסה',100,'application/pdf','${v}'); set role authenticated; select set_config('request.jwt.claim.sub','${u}',false);`,
   )
+  await test('vehicle migration preserves populated tables', async () => {
+    await db.exec('reset role')
+    await db.exec(
+      await readFile(
+        new URL('../supabase/migrations/202610050001_vehicle_import.sql', import.meta.url),
+        'utf8',
+      ),
+    )
+    await db.exec('set role authenticated')
+    await count(
+      `select * from public.customers where id='${ca}' and identification_number='000000001'`,
+      1,
+    )
+    await count(`select * from public.policies where id='${pa}' and premium=100`, 1)
+  })
   await test('agency derives from authenticated user', async () =>
     assert.equal((await db.query('select public.current_agency_id() as id')).rows[0].id, a))
   for (const table of [
@@ -179,6 +194,45 @@ try {
         .public,
       false,
     ))
+  await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub','${u}',false);`)
+  await test('multiple missing identities and phone numbers are allowed', async () => {
+    await db.exec(
+      `insert into public.customers(agency_id,first_name,last_name,identification_number,phone,import_key) values('${a}','רכב ראשון','','','','vehicle-c1'),('${a}','רכב שני','','','','vehicle-c2')`,
+    )
+    await count(`select * from public.customers where identification_number=''`, 2)
+  })
+  await test('nonempty customer identities and import keys remain unique', async () => {
+    await reject(
+      `insert into public.customers(agency_id,first_name,last_name,identification_number,phone) values('${a}','אחר','','000000001','')`,
+      '23505',
+    )
+    await reject(
+      `insert into public.customers(agency_id,first_name,last_name,identification_number,phone,import_key) values('${a}','אחר','','','','vehicle-c1')`,
+      '23505',
+    )
+  })
+  await test('missing policy numbers and premiums preserve raw vehicle data', async () => {
+    await db.exec(
+      `insert into public.policies(agency_id,customer_id,insurance_company,policy_number,insurance_type,start_date,end_date,premium,vehicle_registration,compulsory_value,comprehensive_value,commission,import_key) values('${a}','${ca}','מבטח','','רכב',current_date,current_date+10,null,'12-345-67','1500','יש כיסוי','12%','vehicle-p1'),('${a}','${ca}','מבטח','','רכב',current_date,current_date+10,null,'98-765-43','','','','vehicle-p2')`,
+    )
+    await count(
+      `select * from public.policies where premium is null and commission='12%' and compulsory_value='1500' and comprehensive_value='יש כיסוי'`,
+      1,
+    )
+  })
+  await test('vehicle retry cannot duplicate a policy and tenant isolation still applies', async () => {
+    await reject(
+      `insert into public.policies(agency_id,customer_id,insurance_company,policy_number,insurance_type,start_date,end_date,premium,import_key) values('${a}','${ca}','מבטח','','רכב',current_date,current_date,null,'vehicle-p1')`,
+      '23505',
+    )
+    await reject(
+      `insert into public.policies(agency_id,customer_id,insurance_company,policy_number,insurance_type,start_date,end_date,premium,import_key) values('${a}','${cb}','מבטח','','רכב',current_date,current_date,null,'foreign')`,
+      '23503',
+    )
+    await db.exec(`select set_config('request.jwt.claim.sub','${v}',false)`)
+    await count(`select * from public.customers where import_key='vehicle-c1'`, 0)
+    await count(`select * from public.policies where import_key='vehicle-p1'`, 0)
+  })
   console.log(
     `\n${checks} security checks passed. PostgreSQL executed with stubbed Supabase auth/storage schemas; hosted Auth and Storage APIs still require integration verification.`,
   )

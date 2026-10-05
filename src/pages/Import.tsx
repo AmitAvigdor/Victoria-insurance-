@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import {
   fieldsFor,
+  detectImportMode,
   headersFor,
   importModes,
   prepareImport,
@@ -18,6 +19,7 @@ import {
   type Mapping,
 } from '@/domain/import'
 import type { ImportSheet } from '@/domain/import-workbook'
+import { fullName, type Snapshot } from '@/domain/types'
 import { executeImport, type ImportResult } from '@/services/import'
 import { errorMessage } from '@/lib/utils'
 
@@ -31,6 +33,8 @@ export default function ImportPage() {
   const [fileName, setFileName] = useState('')
   const [mode, setMode] = useState<ImportMode>('customers')
   const [mapping, setMapping] = useState<Mapping>({})
+  const [vehicleLinks, setVehicleLinks] = useState<Record<number, string>>({})
+  const [reviewSnapshot, setReviewSnapshot] = useState<Snapshot | null>(null)
   const [keepExtra, setKeepExtra] = useState(true)
   const [step, setStep] = useState<'configure' | 'preview' | 'result'>('configure')
   const [busy, setBusy] = useState(false)
@@ -65,14 +69,16 @@ export default function ImportPage() {
   const headers = useMemo(() => (sheet ? headersFor(sheet, headerRow) : []), [sheet, headerRow])
   const extras = headers.filter((_, i) => !Object.values(mapping).includes(i))
   const options: ImportOptions | undefined = sheet
-    ? { sheet, headerRow, mode, mapping, keepExtra }
+    ? { sheet, headerRow, mode, mapping, keepExtra, vehicleLinks }
     : undefined
   const ready = plan.rows.filter((row) => row.action === 'ready')
   const invalid = plan.rows.filter((row) => row.action === 'error').length
   const skipped = plan.rows.filter((row) => row.action === 'skip').length
 
-  function selectSheet(index: number, header = 0, nextMode = mode) {
+  function selectSheet(index: number, header = 0, chosenMode?: ImportMode) {
     const selected = sheets[index]
+    const nextMode = chosenMode || detectImportMode(headersFor(selected, header), mode)
+    setVehicleLinks({})
     setSheetIndex(index)
     setHeaderRow(header)
     setMode(nextMode)
@@ -89,6 +95,7 @@ export default function ImportPage() {
     setStep('configure')
     setPlan(emptyPlan)
     setConfirmed(false)
+    setVehicleLinks({})
     if (!/\.(xlsx|xls|csv)$/i.test(file.name)) {
       setError('בחרו קובץ XLSX, XLS או CSV')
       return
@@ -130,7 +137,9 @@ export default function ImportPage() {
         parsed[0].rows.findIndex((row) => row.some((cell) => cell.text.trim())),
       )
       setHeaderRow(firstHeader)
-      setMapping(suggestMapping(headersFor(parsed[0], firstHeader), mode))
+      const detectedMode = detectImportMode(headersFor(parsed[0], firstHeader), mode)
+      setMode(detectedMode)
+      setMapping(suggestMapping(headersFor(parsed[0], firstHeader), detectedMode))
     } catch (e) {
       setError(errorMessage(e))
     } finally {
@@ -144,6 +153,7 @@ export default function ImportPage() {
     setError('')
     try {
       const snapshot = await repository.load()
+      setReviewSnapshot(snapshot)
       setPlan(prepareImport(options, snapshot))
       setConfirmed(false)
       setStep('preview')
@@ -153,6 +163,13 @@ export default function ImportPage() {
       busyRef.current = false
       setReviewing(false)
     }
+  }
+  function changeVehicleLink(rowNumber: number, value: string) {
+    if (!options || !reviewSnapshot) return
+    const next = { ...vehicleLinks, [rowNumber]: value }
+    setVehicleLinks(next)
+    setConfirmed(false)
+    setPlan(prepareImport({ ...options, vehicleLinks: next }, reviewSnapshot))
   }
   async function run() {
     if (!options || !repository || !confirmed || !ready.length || busyRef.current) return
@@ -318,9 +335,15 @@ export default function ImportPage() {
                 אפשר לשייך שם פרטי ומשפחה בנפרד.
               </p>
               <p className="small">
-                לקוח חדש דורש שם פרטי, שם משפחה, מספר זהות וטלפון. פוליסה דורשת חברה, מספר, סוג
-                ביטוח, תאריכי התחלה וסיום ופרמיה שנתית. תאריכים: יום/חודש/שנה או YYYY-MM-DD. משימה
-                דורשת כותרת ותאריך יעד.
+                {mode === 'vehicles' ? (
+                  'המסלול מותאם לקובץ שלך: שם המבוטח, חברת הביטוח, תחילת הביטוח, סיום הביטוח, חובה, מקיף, מספר רישוי, עמלה והערות. אין צורך בת״ז, טלפון או מספר פוליסה. חובה, מקיף ועמלה יישמרו כפי שמופיעים בקובץ, בלי חישוב פרמיה או המרת אחוזים. כל שורה תיצור רשומת ביטוח רכב אחת. ניתן לשייך מבוטחים בשלב הבדיקה.'
+                ) : (
+                  <>
+                    לקוח חדש דורש שם פרטי ומספר זהות במסלול הרגיל. פוליסה דורשת חברה, מספר, סוג
+                    ביטוח, תאריכי התחלה וסיום ופרמיה שנתית. תאריכים: יום/חודש/שנה או YYYY-MM-DD.
+                    משימה דורשת כותרת ותאריך יעד.
+                  </>
+                )}
               </p>
               <div className="import-mapping">
                 {fieldsFor(mode).map(([key, label]) => (
@@ -369,7 +392,11 @@ export default function ImportPage() {
                       onChange={(e) => setKeepExtra(e.target.checked)}
                     />
                     שמירת עמודות נוספות בהערות{' '}
-                    {mode === 'policies' ? 'הפוליסה' : mode === 'tasks' ? 'המשימה' : 'הלקוח החדש'}
+                    {mode === 'policies' || mode === 'vehicles'
+                      ? 'הפוליסה'
+                      : mode === 'tasks'
+                        ? 'המשימה'
+                        : 'הלקוח החדש'}
                   </label>
                   <p className="small">{extras.join(' · ')}</p>
                   {!keepExtra && <p>המידע בעמודות האלו לא יישמר.</p>}
@@ -401,9 +428,15 @@ export default function ImportPage() {
             {ready.filter((r) => r.task).length} משימות חדשות
           </p>
           <p className="import-note">
-            רשומות קיימות לא יעודכנו. לקוחות מזוהים לפי מספר זהות; פוליסות לפי חברה ומספר פוליסה;
-            משימות לפי לקוח, כותרת ותאריך יעד. שורות עם שגיאות לא יישמרו. לתיקון, עדכנו את הקובץ
-            ובחרו אותו שוב.
+            {mode === 'vehicles' ? (
+              'רשומות קיימות לא יעודכנו. ללא ת״ז לא מאחדים מבוטחים לפי שם: ברירת המחדל היא לקוח חדש לכל שורה חדשה. אפשר לבחור למטה לקוח קיים או מבוטח משורה קודמת. ייבוא חוזר של אותו שם מבוטח, רכב, חברה ותקופת ביטוח ידולג. שורות עם שגיאות לא יישמרו.'
+            ) : (
+              <>
+                רשומות קיימות לא יעודכנו. לקוחות מזוהים לפי מספר זהות; פוליסות לפי חברה ומספר
+                פוליסה; משימות לפי לקוח, כותרת ותאריך יעד. שורות עם שגיאות לא יישמרו. לתיקון, עדכנו
+                את הקובץ ובחרו אותו שוב.
+              </>
+            )}
           </p>
           {plan.errors.map((message) => (
             <div className="form-error" role="alert" key={message}>
@@ -417,7 +450,7 @@ export default function ImportPage() {
                   <thead>
                     <tr>
                       <th>שורה</th>
-                      <th>לקוח / מספר זהות</th>
+                      <th>{mode === 'vehicles' ? 'מבוטח / מספר רישוי' : 'לקוח / מספר זהות'}</th>
                       <th>תוצאה צפויה</th>
                       <th>פירוט</th>
                     </tr>
@@ -429,7 +462,11 @@ export default function ImportPage() {
                         <td>
                           {row.name}
                           <br />
-                          <span className="ltr">{row.identification}</span>
+                          <span className="ltr">
+                            {mode === 'vehicles'
+                              ? row.policy?.vehicle_registration || '—'
+                              : row.identification || 'לא צוין'}
+                          </span>
                         </td>
                         <td>
                           <Badge
@@ -449,6 +486,55 @@ export default function ImportPage() {
                           </Badge>
                         </td>
                         <td>
+                          {mode === 'vehicles' && row.action !== 'skip' && (
+                            <label className="field">
+                              <span>שיוך המבוטח</span>
+                              <select
+                                className="field-control"
+                                aria-label={`שיוך מבוטח בשורה ${row.rowNumber}`}
+                                value={vehicleLinks[row.rowNumber] || ''}
+                                onChange={(e) => changeVehicleLink(row.rowNumber, e.target.value)}
+                              >
+                                <option value="">
+                                  ללא שיוך ידני — לקוח חדש או המשך ייבוא קודם
+                                </option>
+                                <optgroup label="מבוטחים משורות קודמות">
+                                  {plan.rows
+                                    .filter(
+                                      (r) =>
+                                        r.rowNumber < row.rowNumber &&
+                                        r.action !== 'error' &&
+                                        r.customerKey,
+                                    )
+                                    .map((r) => (
+                                      <option key={r.rowNumber} value={`row:${r.rowNumber}`}>
+                                        כמו בשורה {r.rowNumber}: {r.name}
+                                      </option>
+                                    ))}
+                                </optgroup>
+                                <optgroup label="לקוחות קיימים">
+                                  {reviewSnapshot?.customers
+                                    .filter((c) => !c.archived_at)
+                                    .map((c) => (
+                                      <option key={c.id} value={`record:${c.id}`}>
+                                        {fullName(c)} ·{' '}
+                                        {c.identification_number ||
+                                          c.phone ||
+                                          reviewSnapshot.policies
+                                            .filter(
+                                              (p) =>
+                                                p.customer_id === c.id && p.vehicle_registration,
+                                            )
+                                            .map((p) => p.vehicle_registration)
+                                            .slice(0, 3)
+                                            .join(', ') ||
+                                          'ללא פרטי קשר'}
+                                      </option>
+                                    ))}
+                                </optgroup>
+                              </select>
+                            </label>
+                          )}
                           {[...row.errors, ...row.warnings].map((message, i) => (
                             <p key={i}>{message}</p>
                           ))}
@@ -467,16 +553,21 @@ export default function ImportPage() {
                                   <section key={title}>
                                     <h3>{title}</h3>
                                     <dl className="import-details">
-                                      {Object.entries(values).map(([key, value]) => (
-                                        <div key={key}>
-                                          <dt>
-                                            {{ status: 'סטטוס', notes: 'הערות' }[key] ||
-                                              fieldsFor(mode).find(([k]) => k === key)?.[1] ||
-                                              key}
-                                          </dt>
-                                          <dd>{value === '' || value == null ? '—' : value}</dd>
-                                        </div>
-                                      ))}
+                                      {Object.entries(values)
+                                        .filter(([key]) => key !== 'import_key')
+                                        .map(([key, value]) => (
+                                          <div key={key}>
+                                            <dt>
+                                              {{ status: 'סטטוס', notes: 'הערות' }[key] ||
+                                                fieldsFor(mode).find(([k]) => k === key)?.[1] ||
+                                                fieldsFor('combined').find(
+                                                  ([k]) => k === key,
+                                                )?.[1] ||
+                                                key}
+                                            </dt>
+                                            <dd>{value === '' || value == null ? '—' : value}</dd>
+                                          </div>
+                                        ))}
                                     </dl>
                                   </section>
                                 ),

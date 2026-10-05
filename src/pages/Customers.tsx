@@ -95,12 +95,16 @@ export function Customers() {
                         <CustomerLink customer={c} />
                       </td>
                       <td>
-                        <span className="ltr">{c.identification_number}</span>
+                        <span className="ltr">{c.identification_number || 'לא צוין'}</span>
                       </td>
                       <td>
-                        <a href={`tel:${c.phone}`} className="ltr">
-                          {c.phone}
-                        </a>
+                        {c.phone ? (
+                          <a href={`tel:${c.phone}`} className="ltr">
+                            {c.phone}
+                          </a>
+                        ) : (
+                          'לא צוין'
+                        )}
                       </td>
                       <td>
                         <a href={`mailto:${c.email}`} className="ltr">

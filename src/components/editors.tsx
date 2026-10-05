@@ -150,7 +150,11 @@ function EditorDialog({ editor, close }: { editor: Editor; close: () => void }) 
               insurance_type: get('insurance_type') as Policy['insurance_type'],
               start_date: get('start_date'),
               end_date: get('end_date'),
-              premium: Number(get('premium')),
+              premium: get('premium') ? Number(get('premium')) : null,
+              vehicle_registration: get('vehicle_registration'),
+              compulsory_value: get('compulsory_value'),
+              comprehensive_value: get('comprehensive_value'),
+              commission: get('commission'),
               status: get('status') as Policy['status'],
               notes: get('notes'),
             },
@@ -280,27 +284,19 @@ function EditorDialog({ editor, close }: { editor: Editor; close: () => void }) 
                 <Field label="שם פרטי *">
                   <Input name="first_name" value={c?.first_name} required maxLength={80} />
                 </Field>
-                <Field label="שם משפחה *">
-                  <Input name="last_name" value={c?.last_name} required maxLength={80} />
+                <Field label="שם משפחה">
+                  <Input name="last_name" value={c?.last_name} maxLength={80} />
                 </Field>
-                <Field label="מספר זהות *">
+                <Field label="מספר זהות">
                   <Input
                     name="identification_number"
                     value={c?.identification_number}
-                    required
                     maxLength={9}
                     dir="ltr"
                   />
                 </Field>
-                <Field label="טלפון *">
-                  <Input
-                    name="phone"
-                    value={c?.phone}
-                    required
-                    type="tel"
-                    maxLength={25}
-                    dir="ltr"
-                  />
+                <Field label="טלפון">
+                  <Input name="phone" value={c?.phone} type="tel" maxLength={25} dir="ltr" />
                 </Field>
                 <Field label="אימייל">
                   <Input name="email" value={c?.email} type="email" maxLength={254} dir="ltr" />
@@ -332,14 +328,8 @@ function EditorDialog({ editor, close }: { editor: Editor; close: () => void }) 
                     maxLength={100}
                   />
                 </Field>
-                <Field label="מספר פוליסה *">
-                  <Input
-                    name="policy_number"
-                    value={p?.policy_number}
-                    required
-                    maxLength={100}
-                    dir="ltr"
-                  />
+                <Field label="מספר פוליסה">
+                  <Input name="policy_number" value={p?.policy_number} maxLength={100} dir="ltr" />
                 </Field>
                 <Field label="סוג ביטוח">
                   <select
@@ -369,19 +359,40 @@ function EditorDialog({ editor, close }: { editor: Editor; close: () => void }) 
                 <Field label="תאריך סיום *">
                   <Input name="end_date" value={p?.end_date || addDays(365)} required type="date" />
                 </Field>
-                <Field label="פרמיה שנתית (₪) *" wide>
+                <Field label="פרמיה שנתית (₪)" wide>
                   <Input
                     name="premium"
                     value={p?.premium ?? ''}
-                    required
                     type="number"
                     min="0"
                     step="0.01"
                   />
                 </Field>
+                <Field label="מספר רישוי">
+                  <Input
+                    name="vehicle_registration"
+                    value={p?.vehicle_registration}
+                    maxLength={50}
+                    dir="ltr"
+                  />
+                </Field>
+                <Field label="חובה">
+                  <Input name="compulsory_value" value={p?.compulsory_value} maxLength={300} />
+                </Field>
+                <Field label="מקיף">
+                  <Input
+                    name="comprehensive_value"
+                    value={p?.comprehensive_value}
+                    maxLength={300}
+                  />
+                </Field>
+                <Field label="עמלה">
+                  <Input name="commission" value={p?.commission} maxLength={300} />
+                </Field>
                 <Field label="הערות" wide>
                   <textarea
                     name="notes"
+                    aria-label="הערות"
                     className="field-control"
                     defaultValue={p?.notes}
                     maxLength={5000}

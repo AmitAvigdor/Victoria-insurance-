@@ -62,9 +62,13 @@ export function CustomerProfile() {
           <div className="contact-details">
             <span>
               <Phone size={14} />
-              <a href={`tel:${customer.phone}`} className="ltr">
-                {customer.phone}
-              </a>
+              {customer.phone ? (
+                <a href={`tel:${customer.phone}`} className="ltr">
+                  {customer.phone}
+                </a>
+              ) : (
+                'לא צוין טלפון'
+              )}
             </span>
             <span>
               <Mail size={14} />
@@ -74,7 +78,7 @@ export function CustomerProfile() {
             </span>
             <span>
               <Contact size={14} />
-              <span className="ltr">{customer.identification_number}</span>
+              <span className="ltr">{customer.identification_number || 'לא צוינה ת״ז'}</span>
             </span>
           </div>
         </div>
@@ -122,8 +126,8 @@ export function CustomerProfile() {
             <dl className="detail-grid">
               {[
                 ['שם מלא', fullName(customer)],
-                ['מספר זהות', customer.identification_number],
-                ['טלפון', customer.phone],
+                ['מספר זהות', customer.identification_number || 'לא צוין'],
+                ['טלפון', customer.phone || 'לא צוין'],
                 ['אימייל', customer.email || 'לא צוין'],
                 [
                   'תאריך לידה',

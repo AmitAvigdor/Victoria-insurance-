@@ -67,8 +67,22 @@ export function PoliciesTable({
                           className="text-link"
                           onClick={() => edit({ kind: 'policy', record: p })}
                         >
-                          {p.policy_number}
+                          {p.policy_number ||
+                            (p.vehicle_registration
+                              ? `רכב ${p.vehicle_registration}`
+                              : 'ללא מספר פוליסה')}
                         </button>
+                        {p.policy_number && p.vehicle_registration && (
+                          <div className="small">רישוי: {p.vehicle_registration}</div>
+                        )}
+                        {(p.compulsory_value || p.comprehensive_value || p.commission) && (
+                          <details className="small">
+                            <summary>חובה, מקיף ועמלה</summary>
+                            <p>חובה: {p.compulsory_value || 'לא צוין'}</p>
+                            <p>מקיף: {p.comprehensive_value || 'לא צוין'}</p>
+                            <p>עמלה: {p.commission || 'לא צוינה'}</p>
+                          </details>
+                        )}
                       </td>
                     )}
                     <td>
@@ -92,10 +106,12 @@ export function PoliciesTable({
                     </td>
                     {renewal && !compact && (
                       <td>
-                        {customer && (
+                        {customer?.phone ? (
                           <a className="ltr" href={`tel:${customer.phone}`}>
                             {customer.phone}
                           </a>
+                        ) : (
+                          'לא צוין'
                         )}
                       </td>
                     )}

@@ -23,6 +23,10 @@ export async function executeImport(
   if (fresh.errors.length) throw new Error(fresh.errors.join('; '))
   const result: ImportResult = { customers: 0, policies: 0, tasks: 0, rows: [] }
   const customerIds = new Map(snapshot.customers.map((c) => [c.identification_number, c.id]))
+  for (const customer of snapshot.customers) {
+    customerIds.set(`record:${customer.id}`, customer.id)
+    if (customer.import_key) customerIds.set(`import:${customer.import_key}`, customer.id)
+  }
   let stopped = false
   for (const [index, row] of fresh.rows.entries()) {
     if (row.action !== 'ready') {
@@ -40,11 +44,12 @@ export async function executeImport(
     } else {
       const saved: string[] = []
       try {
-        let customerId = customerIds.get(row.identification)
+        const customerKey = row.customerKey || row.identification
+        let customerId = customerIds.get(customerKey)
         if (row.customer && !customerId) {
           const customer = await repository.saveCustomer(row.customer)
           customerId = customer.id
-          customerIds.set(row.identification, customerId)
+          customerIds.set(customerKey, customerId)
           result.customers++
           saved.push('לקוח')
         }

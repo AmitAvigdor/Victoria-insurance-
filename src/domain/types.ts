@@ -22,6 +22,7 @@ export interface Profile {
   full_name: string
 }
 export interface Customer extends BaseRecord {
+  import_key?: string
   first_name: string
   last_name: string
   identification_number: string
@@ -39,7 +40,12 @@ export interface Policy extends BaseRecord {
   insurance_type: InsuranceType
   start_date: string
   end_date: string
-  premium: number
+  premium: number | null
+  vehicle_registration?: string
+  compulsory_value?: string
+  comprehensive_value?: string
+  commission?: string
+  import_key?: string
   status: PolicyStatus
   notes: string
 }
@@ -90,4 +96,4 @@ export interface Identity {
   email: string
 }
 export const fullName = (customer?: Customer) =>
-  customer ? `${customer.first_name} ${customer.last_name}` : 'לקוח לא זמין'
+  customer ? `${customer.first_name} ${customer.last_name}`.trim() : 'לקוח לא זמין'

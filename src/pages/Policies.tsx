@@ -18,6 +18,7 @@ export function matchesPolicy(p: Policy, q: string, data: Snapshot) {
   const query = q.trim().toLowerCase()
   return [
     p.policy_number,
+    p.vehicle_registration || '',
     p.insurance_company,
     p.insurance_type,
     fullName(data.customers.find((c) => c.id === p.customer_id)),
@@ -53,7 +54,7 @@ export function Policies() {
         <input
           className="field-control search-input"
           aria-label="חיפוש פוליסות"
-          placeholder="מספר פוליסה, לקוח או חברת ביטוח…"
+          placeholder="מספר פוליסה או רישוי, לקוח או חברת ביטוח…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />

@@ -4,7 +4,8 @@ import { customerSchema, policySchema, taskSchema, validateFile } from '@/domain
 import type { Repository } from './repository'
 function fail(error: { message: string; code?: string } | null) {
   if (!error) return
-  if (error.code === '23505') throw new Error('רשומה עם אותו מספר זהות או מספר פוליסה כבר קיימת')
+  if (error.code === '23505')
+    throw new Error('רשומה עם אותו מספר זהות, מספר פוליסה או שורת ייבוא כבר קיימת')
   if (error.code === '42501') throw new Error('אין הרשאה לפעולה זו. בדקו את שיוך המשתמש לסוכנות')
   if (error.code === '23503')
     throw new Error('לא ניתן לשמור: הרשומה המקושרת אינה זמינה או אינה שייכת לאותו לקוח')

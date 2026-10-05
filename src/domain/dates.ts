@@ -22,9 +22,11 @@ export const formatDate = (date: string) =>
     month: '2-digit',
     year: 'numeric',
   }).format(new Date(date.length === 10 ? `${date}T00:00:00Z` : date))
-export const money = (value: number) =>
-  new Intl.NumberFormat('he-IL', {
-    style: 'currency',
-    currency: 'ILS',
-    maximumFractionDigits: 0,
-  }).format(value)
+export const money = (value: number | null) =>
+  value == null
+    ? 'לא צוין'
+    : new Intl.NumberFormat('he-IL', {
+        style: 'currency',
+        currency: 'ILS',
+        maximumFractionDigits: 0,
+      }).format(value)
