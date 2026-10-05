@@ -164,6 +164,20 @@ After deployment, set the production Vercel URL in Supabase Auth:
 - [Supabase private buckets](https://supabase.com/docs/guides/storage/buckets/fundamentals)
 - [shadcn/ui manual installation](https://ui.shadcn.com/docs/installation/manual)
 
+### Excel import
+
+Open **ייבוא מאקסל** in the navigation, or **לקוחות → ייבוא מאקסל**. Choose an `.xlsx`, `.xls`, or UTF-8 `.csv` file (up to 10 MB). Select a sheet, its header row, and the import mode: customers, combined customer/policy rows, policies for existing customers, or tasks for existing customers. Each run imports one sheet, up to 10,000 data rows and 100 columns. Import customer sheets before separate policy/task sheets.
+
+Hebrew and English headers are suggested automatically and can be remapped. New customers require first/last name (or a full name split at its first space), identification number and phone. Policies require company, policy number, supported insurance type, start/end date and annual premium; tasks require title and due date. Dates accept Excel dates, `DD/MM/YYYY`, `DD.MM.YYYY`, `DD-MM-YYYY`, or `YYYY-MM-DD`. Short digit-only identity numbers are padded to nine digits; phone zero restoration is highlighted for review. Numeric premiums use the underlying cell value, not rounded display text; decimal commas and more than two decimal places require correction.
+
+Unmapped columns are preserved by default in the new customer's notes, policy notes in policy-only mode, or task description in task mode. Notes are limited to 5,000 characters; overflow is reported without truncation. Embedded images, attachments, and document binaries are not imported. Formulas are not executed: saved cell values are used and missing/error values are flagged.
+
+Review each row, expand **הנתונים שיישמרו**, and explicitly confirm before saving. Existing records are never overwritten. Customers are matched by agency-scoped identification number, policies by company and policy number, and tasks by customer/title/due date. Duplicate customer details and notes are explicitly skipped; differing new-customer rows with the same identity are flagged. Rows with errors are skipped only after the user confirms the displayed count. No new database migration or privileged key is needed: saves use the existing validated repository and RLS policies.
+
+The parser runs in a worker on the device; no workbook is uploaded to a parsing service. Inserts are sequential, not one database transaction. A failure stops further writes, records any already-created customer, and shows a per-row result. The user can stop after the current row and download a CSV report. Retry by generating a fresh preview of the same sheet; existing customer/policy keys are skipped. Avoid concurrent imports of the same task file (tasks have no database uniqueness constraint). Preview is rechecked against fresh data immediately before saving. A browser/network interruption with uncertain acknowledgement requires reviewing the fresh preview before retrying.
+
+Parser dependency: [SheetJS CE official installation documentation](https://docs.sheetjs.com/docs/getting-started/installation/nodejs/), pinned tarball `0.20.3` with lockfile integrity.
+
 ### Optional automated browser rerun
 
 The included Playwright suite starts its own server on port 5175 with Supabase disabled, so it uses fictional demo data even when `.env` configures the main application:

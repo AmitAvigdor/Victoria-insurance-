@@ -2,6 +2,16 @@
 
 Updated 5 October 2026. The local frontend is connected to Supabase project `hnrvswoxppipwwrpanwp`.
 
+## Excel import addition — 5 October 2026
+
+- Added `/import`, navigation and customer-page entry points; XLSX/XLS/UTF-8 CSV parsing in a worker, sheet/header selection, Hebrew/English column mapping, explicit preview/approval, row reports and retry.
+- Supports customers, combined customer/policy rows, policies for existing customers, and tasks for existing customers. Unknown columns can be preserved in notes. Existing records are skipped, not updated; attachments are excluded. No schema/RLS changes.
+- 29 unit tests passed (22 importer tests, 7 existing tests). Import checks cover both Excel formats, CSV Hebrew and day-first dates, 1904/1900 date systems, raw premium precision, malformed data, formulas, duplicate ownership, extra fields, stale previews, cancellation and recovery after a partial save.
+- Full demo browser suite: 8 passed, 2 hosted-only agency tests intentionally skipped. Desktop Chrome and an iPhone-sized Chrome viewport cover mapping, multi-sheet/header choice, preview, linked saves, persistence, duplicate retry, report download, invalid input and the existing application workflows. The mobile importer checks were rerun after the responsive row layout change.
+- TypeScript, ESLint, formatting and production build passed. Existing Zod annotation warnings remain non-blocking. No real customer workbook was supplied or imported, and hosted writes were not repeated for this feature.
+
+The following sections record the earlier baseline verification, before this import feature and the Vercel deployment.
+
 ## Changes made during this verification
 
 - Renamed the product to **ויקטוריה** in the login, password reset, navigation, footer, browser title, description and package metadata.

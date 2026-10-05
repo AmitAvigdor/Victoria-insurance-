@@ -792,6 +792,164 @@ tbody tr:hover {
   border-radius: 5px;
   color: #7b8c6e;
 }
+.import-panel {
+  padding: clamp(16px, 3vw, 28px);
+}
+.import-panel h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.import-panel > p {
+  margin-block: 12px;
+}
+.import-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.import-steps {
+  display: flex;
+  gap: 16px;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 24px;
+  flex-wrap: wrap;
+}
+.import-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #65705f;
+  font-size: 0.85rem;
+}
+.import-steps li span {
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+}
+.import-steps li[aria-current] {
+  color: #285b3a;
+  font-weight: 700;
+}
+.import-steps li[aria-current] span {
+  background: #e8f1df;
+}
+.import-section-title {
+  margin-top: 28px;
+}
+.import-mapping {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));
+  gap: 18px;
+  margin-block: 22px;
+}
+.import-mapping .field {
+  min-width: 0;
+}
+.import-sample {
+  color: #68775e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.import-note {
+  padding: 14px;
+  background: #f5f7f2;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-block: 18px;
+  overflow-wrap: anywhere;
+}
+.import-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.import-check input {
+  flex: 0 0 auto;
+  margin-top: 5px;
+}
+.import-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-block: 16px;
+}
+.import-table {
+  min-width: 600px;
+}
+.import-table td {
+  white-space: normal;
+  vertical-align: top;
+  max-width: 450px;
+  overflow-wrap: anywhere;
+}
+.import-table td p {
+  margin: 0 0 8px;
+}
+.import-table summary {
+  cursor: pointer;
+  color: #285b3a;
+}
+.import-details div {
+  margin-block: 8px;
+}
+.import-details dt {
+  font-weight: 600;
+}
+.import-details dd {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.import-filename {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.import-progress {
+  width: 100%;
+  margin-block: 18px;
+  accent-color: #285b3a;
+}
+.import-panel .form-actions {
+  flex-wrap: wrap;
+}
+@media (max-width: 700px) {
+  .import-table,
+  .import-table tbody {
+    display: block;
+    min-width: 0;
+    width: 100%;
+  }
+  .import-table thead {
+    display: none;
+  }
+  .import-table tr {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 12px;
+    padding-block: 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  .import-table td {
+    display: block;
+    max-width: none;
+    padding: 0;
+    border: 0;
+    text-align: start;
+  }
+  .import-table td:first-child::before {
+    content: 'שורה ';
+  }
+  .import-table td:last-child {
+    grid-column: 1 / -1;
+  }
+}
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

@@ -8,6 +8,7 @@ import {
   RefreshCw,
   CheckSquare,
   Files,
+  FileSpreadsheet,
   Building2,
   Search,
   ChevronLeft,
@@ -30,6 +31,7 @@ const nav = [
   { path: '/renewals', label: 'חידושים', icon: RefreshCw },
   { path: '/tasks', label: 'משימות', icon: CheckSquare },
   { path: '/documents', label: 'מסמכים', icon: Files },
+  { path: '/import', label: 'ייבוא מאקסל', icon: FileSpreadsheet },
 ]
 export function Layout() {
   const { identity, isDemo, logout } = useAuth()

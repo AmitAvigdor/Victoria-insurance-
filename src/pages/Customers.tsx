@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { Plus, Pencil, Archive, RotateCcw } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { Plus, Pencil, Archive, RotateCcw, FileSpreadsheet } from 'lucide-react'
 import { useData } from '@/app/data'
 import { useEditors } from '@/components/editors'
 import { Button } from '@/components/ui/button'
@@ -26,10 +26,18 @@ export function Customers() {
         title="לקוחות"
         subtitle="האנשים שמאחורי הפוליסות. כל המידע, בתיק אחד."
         actions={
-          <Button onClick={() => edit({ kind: 'customer' })}>
-            <Plus size={17} />
-            לקוח חדש
-          </Button>
+          <>
+            <Button variant="outline" asChild>
+              <Link to="/import">
+                <FileSpreadsheet size={17} />
+                ייבוא מאקסל
+              </Link>
+            </Button>
+            <Button onClick={() => edit({ kind: 'customer' })}>
+              <Plus size={17} />
+              לקוח חדש
+            </Button>
+          </>
         }
       />
       <div className="toolbar">

@@ -1,4 +1,4 @@
-import { Component, type ReactNode } from 'react'
+import { Component, lazy, Suspense, type ReactNode } from 'react'
 import { Navigate, Route, Routes, useLocation, Link } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster, toast } from 'sonner'
@@ -18,6 +18,7 @@ import { Tasks } from '@/pages/Tasks'
 import { Documents } from '@/pages/Documents'
 import { SearchPage } from '@/pages/Search'
 import { errorMessage } from '@/lib/utils'
+const ImportPage = lazy(() => import('@/pages/Import'))
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: true } },
 })
@@ -81,6 +82,14 @@ export default function App() {
             <Route element={<Protected />}>
               <Route index element={<Dashboard />} />
               <Route path="customers" element={<Customers />} />
+              <Route
+                path="import"
+                element={
+                  <Suspense fallback={<p role="status">טוען את מסך הייבוא…</p>}>
+                    <ImportPage />
+                  </Suspense>
+                }
+              />
               <Route path="customers/:id" element={<CustomerProfile />} />
               <Route path="policies" element={<Policies />} />
               <Route path="renewals" element={<Renewals />} />
