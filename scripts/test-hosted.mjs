@@ -1,0 +1,389 @@
+// Explicit opt-in integration test. Creates only temporary agencies/users and cleans them up.
+// Administrator keys and passwords stay in process memory, never in the browser bundle or logs.
+import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
+import { execFileSync, spawn } from 'node:child_process'
+import { readFile } from 'node:fs/promises'
+import { createClient } from '@supabase/supabase-js'
+
+if (process.env.CONFIRM_HOSTED_TEST !== 'true') {
+  throw new Error('Set CONFIRM_HOSTED_TEST=true to create and remove isolated hosted test data.')
+}
+process.loadEnvFile('.env')
+const url = process.env.VITE_SUPABASE_URL
+const publicKey = process.env.VITE_SUPABASE_ANON_KEY
+const cli = process.env.SUPABASE_CLI || 'supabase'
+const ref = new URL(url).hostname.split('.')[0]
+const keys = JSON.parse(
+  execFileSync(
+    cli,
+    ['projects', 'api-keys', '--project-ref', ref, '--reveal', '--output', 'json'],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+  ),
+)
+const adminKey =
+  keys.find((k) => k.type === 'secret')?.api_key ||
+  keys.find((k) => k.name === 'service_role')?.api_key
+assert.ok(adminKey, 'Administrator access is required for temporary fixtures')
+const options = { auth: { persistSession: false, autoRefreshToken: false } }
+const admin = createClient(url, adminKey, options)
+const client = () => createClient(url, publicKey, options)
+const agencies = [randomUUID(), randomUUID()]
+const users = []
+const paths = new Set()
+let checks = 0
+function ok(result) {
+  if (result.error) throw new Error(`${result.error.code || 'API'}: ${result.error.message}`)
+  return result.data
+}
+async function check(name, fn) {
+  await fn()
+  checks++
+  console.log(`PASS ${name}`)
+}
+async function runUI(env) {
+  await new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      ['node_modules/@playwright/test/cli.js', 'test', '--project=chromium', '--workers=1'],
+      {
+        stdio: 'inherit',
+        env: { ...process.env, E2E_LIVE: 'true', ...env },
+      },
+    )
+    child.on('error', reject)
+    child.on('exit', (code) =>
+      code === 0 ? resolve() : reject(new Error('Hosted browser checks failed')),
+    )
+  })
+}
+try {
+  const bucket = ok(await admin.storage.getBucket('customer-documents'))
+  await check('hosted document bucket is private and limits size', async () => {
+    assert.equal(bucket.public, false)
+    assert.equal(Number(bucket.file_size_limit), 10485760)
+  })
+  ok(
+    await admin
+      .from('agencies')
+      .insert(agencies.map((id, i) => ({ id, name: `בדיקת ויקטוריה זמנית ${i + 1}` }))),
+  )
+  for (let i = 0; i < 4; i++) {
+    const email = `victoria-qa-${randomUUID()}@example.invalid`
+    const password = `V!${randomUUID()}a9`
+    const data = ok(await admin.auth.admin.createUser({ email, password, email_confirm: true }))
+    users.push({ id: data.user.id, email, password, client: client() })
+    if (i < 3)
+      ok(
+        await admin.from('profiles').insert({
+          id: data.user.id,
+          agency_id: agencies[i === 2 ? 1 : 0],
+          full_name: `סוכן בדיקה ${i + 1}`,
+        }),
+      )
+    ok(await users[i].client.auth.signInWithPassword({ email, password }))
+  }
+  const [a, colleague, b, unassigned] = users.map((u) => u.client)
+  await check('password login succeeds and wrong password is rejected', async () => {
+    assert.ok(
+      (await client().auth.signInWithPassword({ email: users[0].email, password: randomUUID() }))
+        .error,
+    )
+    assert.equal(ok(await a.auth.getUser()).user.id, users[0].id)
+  })
+  const customerInput = (agency, number) => ({
+    agency_id: agency,
+    first_name: 'בדיקת',
+    last_name: 'הרשאות',
+    identification_number: number,
+    phone: '0500000000',
+  })
+  const ca = ok(
+    await a.from('customers').insert(customerInput(agencies[0], '000009990')).select().single(),
+  )
+  const cb = ok(
+    await b.from('customers').insert(customerInput(agencies[1], '000009990')).select().single(),
+  )
+  await check('colleagues in the same agency share and edit a customer', async () => {
+    assert.equal(ok(await colleague.from('customers').select('id').eq('id', ca.id)).length, 1)
+    ok(await colleague.from('customers').update({ notes: 'Shared edit verified' }).eq('id', ca.id))
+    assert.equal(
+      ok(await a.from('customers').select('notes').eq('id', ca.id).single()).notes,
+      'Shared edit verified',
+    )
+  })
+  await check('cross-agency writes and membership changes denied', async () => {
+    assert.ok((await a.from('customers').insert(customerInput(agencies[1], '000009991'))).error)
+    assert.deepEqual(
+      ok(await a.from('customers').update({ notes: 'forbidden' }).eq('id', cb.id).select()),
+      [],
+    )
+    assert.ok(
+      (await a.from('profiles').update({ agency_id: agencies[1] }).eq('id', users[0].id)).error,
+    )
+  })
+  await check('anonymous and unassigned users have no customer access', async () => {
+    assert.ok((await client().from('customers').select('*')).error)
+    assert.deepEqual(ok(await unassigned.from('customers').select('*')), [])
+  })
+  const now = new Date().toISOString().slice(0, 10)
+  const end = new Date(Date.now() + 6 * 86400000).toISOString().slice(0, 10)
+  const policyInput = {
+    agency_id: agencies[0],
+    customer_id: ca.id,
+    insurance_company: 'חברת בדיקה',
+    policy_number: 'HOSTED-QA',
+    insurance_type: 'רכב',
+    start_date: now,
+    end_date: end,
+    premium: 100,
+  }
+  const policy = ok(await a.from('policies').insert(policyInput).select().single())
+  await check('policy edits persist and cross-agency customer links are rejected', async () => {
+    ok(await colleague.from('policies').update({ premium: 200 }).eq('id', policy.id))
+    assert.equal(
+      ok(await a.from('policies').select('premium').eq('id', policy.id).single()).premium,
+      200,
+    )
+    assert.ok(
+      (
+        await a
+          .from('policies')
+          .insert({ ...policyInput, policy_number: 'BAD-LINK', customer_id: cb.id })
+      ).error,
+    )
+  })
+  const task = ok(
+    await a
+      .from('tasks')
+      .insert({
+        agency_id: agencies[0],
+        customer_id: ca.id,
+        policy_id: policy.id,
+        title: 'בדיקת משימה',
+        due_date: now,
+      })
+      .select()
+      .single(),
+  )
+  await check('task completion and customer archive/restore are audited', async () => {
+    ok(await a.from('tasks').update({ status: 'הושלמה' }).eq('id', task.id))
+    ok(await a.from('customers').update({ archived_at: new Date().toISOString() }).eq('id', ca.id))
+    assert.ok(
+      ok(await a.from('customers').select('archived_at').eq('id', ca.id).single()).archived_at,
+    )
+    ok(await a.from('customers').update({ archived_at: null }).eq('id', ca.id))
+    const events = ok(
+      await a.from('activities').select('description').eq('customer_id', ca.id),
+    ).map((r) => r.description)
+    assert.ok(events.includes('הושלמה משימה: בדיקת משימה'))
+    assert.ok(events.includes('הלקוח שוחזר מהארכיון'))
+    assert.ok(
+      (
+        await a
+          .from('activities')
+          .insert({ agency_id: agencies[0], description: 'forged', action_type: 'fake' })
+      ).error,
+    )
+  })
+  const bytes = await readFile('tests/fixtures/fictional-policy.pdf')
+  const documentId = randomUUID()
+  const filePath = `${agencies[0]}/${ca.id}/${documentId}.pdf`
+  paths.add(filePath)
+  ok(
+    await a.storage
+      .from('customer-documents')
+      .upload(filePath, bytes, { contentType: 'application/pdf', upsert: false }),
+  )
+  ok(
+    await a.from('documents').insert({
+      id: documentId,
+      agency_id: agencies[0],
+      customer_id: ca.id,
+      policy_id: policy.id,
+      file_name: 'fictional-policy.pdf',
+      file_path: filePath,
+      document_type: 'פוליסה',
+      file_size: bytes.length,
+      mime_type: 'application/pdf',
+      uploaded_by: users[0].id,
+    }),
+  )
+  // Populate both sides before checking isolation: empty tables cannot prove RLS.
+  const otherPolicy = ok(
+    await b
+      .from('policies')
+      .insert({ ...policyInput, agency_id: agencies[1], customer_id: cb.id })
+      .select()
+      .single(),
+  )
+  ok(
+    await b.from('tasks').insert({
+      agency_id: agencies[1],
+      customer_id: cb.id,
+      policy_id: otherPolicy.id,
+      title: 'בדיקת סוכנות שנייה',
+      due_date: now,
+    }),
+  )
+  const otherDocument = randomUUID()
+  const otherPath = `${agencies[1]}/${cb.id}/${otherDocument}.pdf`
+  paths.add(otherPath)
+  ok(
+    await b.storage
+      .from('customer-documents')
+      .upload(otherPath, bytes, { contentType: 'application/pdf' }),
+  )
+  ok(
+    await b.from('documents').insert({
+      id: otherDocument,
+      agency_id: agencies[1],
+      customer_id: cb.id,
+      policy_id: otherPolicy.id,
+      file_name: 'other-agency.pdf',
+      file_path: otherPath,
+      document_type: 'פוליסה',
+      file_size: bytes.length,
+      mime_type: 'application/pdf',
+      uploaded_by: users[2].id,
+    }),
+  )
+  for (const table of [
+    'agencies',
+    'profiles',
+    'customers',
+    'policies',
+    'tasks',
+    'documents',
+    'activities',
+  ]) {
+    await check(`${table}: populated agencies isolated through hosted REST`, async () => {
+      const field = table === 'agencies' ? 'id' : 'agency_id'
+      assert.ok(ok(await a.from(table).select('id').eq(field, agencies[0])).length > 0)
+      assert.ok(ok(await b.from(table).select('id').eq(field, agencies[1])).length > 0)
+      assert.deepEqual(ok(await a.from(table).select('*').eq(field, agencies[1])), [])
+      assert.deepEqual(ok(await b.from(table).select('*').eq(field, agencies[0])), [])
+    })
+  }
+  const signed = ok(
+    await a.storage.from('customer-documents').createSignedUrl(filePath, 60),
+  ).signedUrl
+  const expiry = JSON.parse(
+    Buffer.from(new URL(signed).searchParams.get('token').split('.')[1], 'base64url').toString(),
+  ).exp
+  await check('private document view/download preserves bytes and filename', async () => {
+    const response = await fetch(signed)
+    assert.equal(response.status, 200)
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes)
+    const download = ok(
+      await colleague.storage
+        .from('customer-documents')
+        .createSignedUrl(filePath, 60, { download: 'fictional-policy.pdf' }),
+    ).signedUrl
+    const downloaded = await fetch(download)
+    assert.match(downloaded.headers.get('content-disposition'), /fictional-policy.pdf/)
+    assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()), bytes)
+  })
+  await check(
+    'foreign storage listing, signing, upload, download and deletion denied',
+    async () => {
+      assert.deepEqual(
+        ok(await b.storage.from('customer-documents').list(`${agencies[0]}/${ca.id}`)),
+        [],
+      )
+      assert.ok((await b.storage.from('customer-documents').createSignedUrl(filePath, 60)).error)
+      assert.ok((await b.storage.from('customer-documents').download(filePath)).error)
+      const foreignPath = `${agencies[0]}/${ca.id}/${randomUUID()}.pdf`
+      paths.add(foreignPath)
+      assert.ok(
+        (
+          await b.storage
+            .from('customer-documents')
+            .upload(foreignPath, bytes, { contentType: 'application/pdf' })
+        ).error,
+      )
+      await b.storage.from('customer-documents').remove([filePath])
+      assert.ok(ok(await a.storage.from('customer-documents').download(filePath)))
+      assert.ok((await client().storage.from('customer-documents').download(filePath)).error)
+    },
+  )
+  await check('same-agency document overwrite is prohibited', async () => {
+    assert.ok(
+      (
+        await colleague.storage
+          .from('customer-documents')
+          .update(filePath, bytes, { contentType: 'application/pdf' })
+      ).error,
+    )
+  })
+  await check('hosted desktop browser workflows and session isolation', () =>
+    runUI({
+      E2E_EMAIL: users[0].email,
+      E2E_PASSWORD: users[0].password,
+      E2E_OTHER_EMAIL: users[2].email,
+      E2E_OTHER_PASSWORD: users[2].password,
+    }),
+  )
+  await check('signed link expires after its 60-second validity', async () => {
+    const remaining = expiry * 1000 - Date.now() + 2000
+    if (remaining > 0) {
+      console.log(`Waiting ${Math.ceil(remaining / 1000)} seconds for signed-link expiration`)
+      await new Promise((resolve) => setTimeout(resolve, remaining))
+    }
+    const response = await fetch(signed, { headers: { 'Cache-Control': 'no-cache' } })
+    assert.ok(!response.ok, 'Expired signed URL must not return document bytes')
+  })
+  await check('deleting a document removes both bytes and metadata', async () => {
+    ok(await a.storage.from('customer-documents').remove([filePath]))
+    ok(await a.from('documents').delete().eq('id', documentId))
+    assert.deepEqual(ok(await a.from('documents').select('id').eq('id', documentId)), [])
+    assert.deepEqual(
+      ok(await a.storage.from('customer-documents').list(`${agencies[0]}/${ca.id}`)),
+      [],
+    )
+    // Reusing a previously downloaded URL can return cached bytes after deletion.
+    // Check a fresh authenticated request as well as the authoritative object listing.
+    const session = ok(await a.auth.getSession()).session
+    const response = await fetch(
+      `${url}/storage/v1/object/authenticated/customer-documents/${filePath}?verification=${randomUUID()}`,
+      {
+        headers: {
+          apikey: publicKey,
+          Authorization: `Bearer ${session.access_token}`,
+          'Cache-Control': 'no-cache',
+        },
+      },
+    )
+    assert.ok(!response.ok, 'Deleted object must not be returned by a fresh request')
+  })
+  console.log(`${checks} hosted checks passed`)
+} finally {
+  // Only remove UUIDs generated by this run. Never change an existing user's agency or data.
+  for (const agency of agencies) {
+    const customers = ok(await admin.from('customers').select('id').eq('agency_id', agency))
+    for (const customer of customers) {
+      const prefix = `${agency}/${customer.id}`
+      for (const entry of ok(await admin.storage.from('customer-documents').list(prefix)))
+        paths.add(`${prefix}/${entry.name}`)
+    }
+  }
+  if (paths.size) ok(await admin.storage.from('customer-documents').remove([...paths]))
+  for (const table of [
+    'documents',
+    'tasks',
+    'policies',
+    'activities',
+    'customers',
+    'profiles',
+    'agencies',
+  ]) {
+    ok(
+      await admin
+        .from(table)
+        .delete()
+        .in(table === 'agencies' ? 'id' : 'agency_id', agencies),
+    )
+  }
+  for (const user of users) ok(await admin.auth.admin.deleteUser(user.id))
+  console.log('Temporary users, agencies, records and document files removed')
+}

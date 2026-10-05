@@ -1,0 +1,7 @@
+node_modules
+dist
+package-lock.json
+*.sql
+playwright-report
+test-results
+supabase/.temp/
