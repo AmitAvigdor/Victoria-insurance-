@@ -174,7 +174,7 @@ Vehicle registration, customer name, insurer and valid start/end dates are requi
 
 Policy forms and list details show registration, compulsory/comprehensive values and commission; policy search includes registration. Blank contact details have explicit missing-value labels.
 
-Requires `supabase/migrations/202610050001_vehicle_import.sql` **before deploying this frontend**. It adds source/vehicle fields, allows blank surnames/identity/phone/policy number and nullable premiums, and replaces the identity/policy-number unique constraints with indexes for nonempty values. It adds unique agency-scoped import-key indexes. Existing values, RLS, audit triggers and cross-agency foreign keys remain in place. Production migration execution is pending explicit approval after automatic approval review rejected the first apply attempt; the dry run and local PostgreSQL migration tests succeeded.
+Requires `supabase/migrations/202610050001_vehicle_import.sql` **before deploying this frontend**. It adds source/vehicle fields, allows blank surnames/identity/phone/policy number and nullable premiums, and replaces the identity/policy-number unique constraints with indexes for nonempty values. It adds unique agency-scoped import-key indexes. Existing values, RLS, audit triggers and cross-agency foreign keys remain in place. The migration was applied successfully to the linked production project after the user's explicit approval, following a dry run and local PostgreSQL migration tests.
 
 #### Standard import modes
 

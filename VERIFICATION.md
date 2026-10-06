@@ -1,15 +1,16 @@
 # ויקטוריה — Verification record
 
-Updated 5 October 2026. The local frontend is connected to Supabase project `hnrvswoxppipwwrpanwp`.
+Updated 6 October 2026. Victoria uses Supabase project `hnrvswoxppipwwrpanwp` and is hosted at https://victoria-insurance-tau.vercel.app.
 
-## Vehicle workbook adaptation — pending production approval
+## Vehicle workbook adaptation
 
 - Exact provided headers are detected. Missing IDs, phones and policy numbers are not fabricated. Compulsory/comprehensive coverage, registration, commission and unnamed extra-column values are preserved. Annual premium is left unknown rather than inferred from ambiguous source values.
 - Customers are not merged by name: preview supports an explicit existing-customer or prior-row link. Persistent import keys protect sequential/partial-write retries. Existing records are not overwritten.
 - 37 unit tests passed, including 8 new vehicle cases. 46 PostgreSQL/RLS checks passed, including applying the migration to populated tables, blank-value support, nonblank uniqueness, duplicate import keys and tenant isolation.
 - All 10 applicable demo browser scenarios passed across desktop and iPhone-sized Chrome (8 in the full run, then the 2 new vehicle scenarios after fixing test locators and the notes accessibility label). Two hosted-only cases are intentionally excluded from demo mode. Vehicle checks exercise auto mapping, explicit grouping, saving/retry, complete original notes and raw values, search by registration, editing and reload persistence.
-- TypeScript, ESLint and production build passed. Supabase dry run reports only `202610050001_vehicle_import.sql` pending. Automatic approval review rejected the production apply because it changes production constraints and requires explicit approval. No remote migration or frontend deployment for this adaptation has occurred.
-- An additional isolated hosted integration check is prepared but cannot run until the migration is approved/applied. No actual customer workbook has been imported.
+- TypeScript, ESLint, formatting and production build passed. After a dry run and the user's explicit approval, `202610050001_vehicle_import.sql` was successfully applied to production. Existing rows, RLS, audit triggers and cross-agency foreign keys are preserved.
+- All 21 hosted integration checks passed against the updated production schema, including missing identifiers, nullable premiums, raw vehicle fields, duplicate prevention, agency isolation and private documents. Three hosted browser workflows passed; the three importer UI cases are covered separately by the demo suite. Temporary users, agencies, records and document files created by the hosted run were removed successfully.
+- No actual customer workbook has been supplied or imported.
 
 ## Excel import addition — 5 October 2026
 
