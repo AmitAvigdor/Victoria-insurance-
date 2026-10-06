@@ -13,4 +13,5 @@ export default tseslint.config(
     rules: { ...hooks.configs.recommended.rules },
   },
   { files: ['**/*.{js,mjs}'], languageOptions: { globals: globals.node } },
+  { files: ['supabase/functions/**/*.ts'], languageOptions: { globals: { Deno: 'readonly' } } },
 )

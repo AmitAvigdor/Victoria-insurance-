@@ -44,7 +44,7 @@ export function Login() {
         redirectTo: `${window.location.origin}/reset-password`,
       })
       if (error) throw error
-      setInfo('שלחנו קישור לאיפוס הסיסמה. יש לפתוח אותו מאותו מחשב שבו האפליקציה רצה.')
+      setInfo('אם קיים חשבון לכתובת זו, יישלח אליו קישור לאיפוס הסיסמה.')
     } catch (e) {
       setError(errorMessage(e))
     } finally {

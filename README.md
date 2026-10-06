@@ -93,16 +93,16 @@ For BAFI or other insurance providers, implement an adapter **server-side**, aut
 
 ## Security model
 
-- RLS enabled on all seven application tables; explicit per-command policies; anonymous users have no application-table privileges.
+- RLS enabled on all application tables; explicit per-command policies; anonymous users have no application-table privileges.
 - `current_agency_id()` derives membership from a protected `profiles` table and `auth.uid()`, not from client-supplied claims or editable user metadata. Its security-definer function has an empty search path and limited execution privileges.
 - Every business row has `agency_id`. Composite foreign keys prevent cross-agency relationships **and** a task/document linking to a policy belonging to a different customer within the same agency.
-- Row UUIDs, agency IDs and policy customer ownership cannot change. Profiles and agencies can only be provisioned administratively. All agents in one agency have the same permissions in this MVP.
+- Row UUIDs, agency IDs and policy customer ownership cannot change. Profiles and agencies can only be provisioned administratively. Profiles have admin/editor/viewer roles. New profiles default to viewer. The provisioned owner is admin; only admins can change roles or archive/restore documents, and the last admin cannot be demoted.
 - Input validation is enforced in the client and important constraints are independently enforced by PostgreSQL. Browser checks are not the security boundary.
 - Audit records are created by database triggers in the original transaction. Browser roles cannot forge, edit or erase them. There is no hard-delete privilege for customers, policies or tasks; customer removal is reversible archival.
-- Storage is private, restricted by agency folder, customer association and file path. Bucket MIME/size restrictions are enforced by Supabase; overwrite is disabled. Metadata paths are checked against agency, customer, document UUID and MIME extension.
+- Storage is private and browser read/write/delete access is blocked. The `documents` Edge Function validates the authenticated user, active session, agency, customer/policy relationship, file signature and size before privileged storage operations. Metadata paths are checked against agency, customer, document UUID and MIME extension.
 - Document URLs expire after 60 seconds. Anyone given a still-valid signed URL can use it until expiry; treat these URLs as sensitive. Signed URLs already issued are not revoked by logout.
-- Previously downloaded responses may remain cached after document deletion. Deletion removes the stored object and metadata; it cannot recall copies already downloaded. Hosted deletion tests verify both the storage listing and a fresh uncached request.
-- Upload metadata failure attempts to remove uploaded bytes. Storage and PostgreSQL are separate transactions: a cleanup failure reports that manual cleanup is needed. Deletion removes bytes first, then metadata; retry a metadata deletion failure. Administrative periodic orphan cleanup is a future operational task.
+- Document deletion is now audited, reversible archival. It preserves bytes and metadata and blocks new links; administrators restore files from the Security page. Existing signed links remain valid for at most 60 seconds and downloaded copies cannot be recalled.
+- Upload metadata failure attempts server-side cleanup of the uploaded object. Storage and PostgreSQL are separate transactions; administrative orphan reconciliation remains an operational task. Files are explicitly labeled unscanned. Personal-use downloads of unscanned files require affirmative confirmation and are restricted to the uploader, with attachment disposition. This is not malware scanning.
 - Auth sessions are persisted by the Supabase SDK in browser storage. Shared devices should use logout. Production requires HTTPS, appropriate deployment headers/CSP, least-privilege operator access, backups, retention rules and a review appropriate to the agency's real data. No compliance certification is implied.
 - File MIME and size checks are not malware scanning or content inspection. Add a quarantine/scanning pipeline before expanding file types or accepting arbitrary public uploads.
 
@@ -212,6 +212,14 @@ CONFIRM_HOSTED_TEST=true PLAYWRIGHT_CHANNEL=chrome npm run test:hosted
 CONFIRM_HOSTED_TEST=true PLAYWRIGHT_CHANNEL=chrome npm run test:recovery
 ```
 
-Set `SUPABASE_CLI` to the CLI executable path if it is not on PATH. The hosted suite starts its own frontend on port 5176, creates two temporary agencies and four users, tests REST/Storage permissions and the browser workflow, then removes the fixtures. The recovery suite expects the regular app on port 5173 (override with `HOSTED_APP_URL`), creates one temporary user, and tests a generated recovery link and password change without sending email. Administrator keys and passwords stay in process memory. Hosted browser traces are disabled to avoid recording credentials.
+Set `SUPABASE_CLI` to the CLI executable path if it is not on PATH. The hosted suite creates two temporary agencies and four users, tests REST/Storage/Edge Function permissions, then removes its fixtures. Set `E2E_BASE_URL=https://victoria-insurance-tau.vercel.app` to include browser workflows on the deployed app. The recovery suite defaults to the production site (override with `HOSTED_APP_URL`), creates one temporary user, and tests a generated recovery link and password change without sending email. Administrator keys and passwords stay in process memory. Hosted browser traces are disabled to avoid recording credentials.
 
 The public product name is **ויקטוריה**. Existing IndexedDB/session keys retain their original internal names so the rename preserves saved demo data and sessions.
+
+## Personal-use security hardening — 6 October 2026
+
+See `SECURITY-HARDENING.md` for the deployed controls, explicit limitations and operational follow-up. MFA is intentionally not required at the owner’s request. No external malware service is configured, and no sensitive file is sent to a third-party scanning service.
+
+Apply migrations, deploy the server function (`supabase functions deploy documents --use-api`), and then deploy the Vercel frontend. The function must retain its own Auth and session validation even though gateway JWT verification is disabled for modern API-key compatibility. Server credentials are read from the platform's built-in environment and never copied into Vite configuration.
+
+Run `npm run test:hardening` for the new role/session/document policy tests and request handler tests. `npm run test:security` retains coverage of the earlier migrations. The Auth settings changed through a reviewed sparse CLI configuration: signup disabled, confirmed email, minimum new-password length 12, secure password change, JWT lifetime 900 seconds, production-only recovery redirect and sign-in rate cap 15. Database TLS enforcement is enabled. No MFA configuration was changed.

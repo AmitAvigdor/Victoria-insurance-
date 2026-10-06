@@ -3,7 +3,7 @@ import type { Customer, Identity, Policy, Snapshot, Task } from '@/domain/types'
 export const demoAgencyId = '11111111-1111-4111-8111-111111111111'
 export const demoUserId = '22222222-2222-4222-8222-222222222222'
 export const demoIdentity: Identity = {
-  profile: { id: demoUserId, agency_id: demoAgencyId, full_name: 'דניאל ישראלי' },
+  profile: { id: demoUserId, agency_id: demoAgencyId, full_name: 'דניאל ישראלי', role: 'admin' },
   agency: { id: demoAgencyId, name: 'סוכנות לדוגמה' },
   email: 'agent@example.invalid',
 }

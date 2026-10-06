@@ -26,6 +26,7 @@ async function save(page: Page) {
 test('customer → policy → renewal → task → document → persistence → protected logout', async ({
   page,
 }) => {
+  page.on('dialog', (dialog) => void dialog.accept())
   await login(page)
   await page.goto('/customers')
   await page.getByRole('button', { name: 'לקוח חדש', exact: true }).click()
@@ -115,4 +116,19 @@ test('responsive viewport stays within document bounds', async ({ page }) => {
     const width = await page.evaluate(() => document.documentElement.scrollWidth)
     expect(width, route).toBeLessThanOrEqual(page.viewportSize()!.width + 1)
   }
+})
+
+test('idle session is locked after reload and fresh login still works', async ({ page }) => {
+  test.skip(process.env.E2E_LIVE !== 'true', 'Only hosted sessions use idle expiry')
+  await login(page)
+  await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((key) => key.startsWith('victoria-last-active:'))
+    if (!key) throw new Error('Activity marker missing')
+    localStorage.setItem(key, String(Date.now() - 16 * 60 * 1000))
+  })
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'טוב שחזרת', exact: true })).toBeVisible({
+    timeout: 20000,
+  })
+  await login(page)
 })

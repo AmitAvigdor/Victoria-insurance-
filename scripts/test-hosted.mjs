@@ -79,6 +79,7 @@ try {
           id: data.user.id,
           agency_id: agencies[i === 2 ? 1 : 0],
           full_name: `סוכן בדיקה ${i + 1}`,
+          role: i === 1 ? 'editor' : 'admin',
         }),
       )
     ok(await users[i].client.auth.signInWithPassword({ email, password }))
@@ -234,12 +235,12 @@ try {
   const filePath = `${agencies[0]}/${ca.id}/${documentId}.pdf`
   paths.add(filePath)
   ok(
-    await a.storage
+    await admin.storage
       .from('customer-documents')
       .upload(filePath, bytes, { contentType: 'application/pdf', upsert: false }),
   )
   ok(
-    await a.from('documents').insert({
+    await admin.from('documents').insert({
       id: documentId,
       agency_id: agencies[0],
       customer_id: ca.id,
@@ -273,12 +274,12 @@ try {
   const otherPath = `${agencies[1]}/${cb.id}/${otherDocument}.pdf`
   paths.add(otherPath)
   ok(
-    await b.storage
+    await admin.storage
       .from('customer-documents')
       .upload(otherPath, bytes, { contentType: 'application/pdf' }),
   )
   ok(
-    await b.from('documents').insert({
+    await admin.from('documents').insert({
       id: otherDocument,
       agency_id: agencies[1],
       customer_id: cb.id,
@@ -308,96 +309,165 @@ try {
       assert.deepEqual(ok(await b.from(table).select('*').eq(field, agencies[0])), [])
     })
   }
-  const signed = ok(
-    await a.storage.from('customer-documents').createSignedUrl(filePath, 60),
-  ).signedUrl
+  async function endpoint(who, body) {
+    const session = ok(await who.auth.getSession()).session
+    return fetch(url + '/functions/v1/documents', {
+      method: 'POST',
+      headers: {
+        apikey: publicKey,
+        Authorization: `Bearer ${session.access_token}`,
+        Origin: 'https://victoria-insurance-tau.vercel.app',
+        ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+      },
+      body: body instanceof FormData ? body : JSON.stringify(body),
+    })
+  }
+  const settings = await (
+    await fetch(url + '/auth/v1/settings', { headers: { apikey: publicKey } })
+  ).json()
+  await check('public signup disabled, email verification retained', async () => {
+    assert.equal(settings.disable_signup, true)
+    assert.equal(settings.mailer_autoconfirm, false)
+  })
+  await check(
+    'browser cannot directly read, sign, upload, overwrite or delete stored documents',
+    async () => {
+      assert.ok((await a.storage.from('customer-documents').createSignedUrl(filePath, 60)).error)
+      assert.ok((await a.storage.from('customer-documents').download(filePath)).error)
+      assert.ok(
+        (
+          await a.storage
+            .from('customer-documents')
+            .upload(filePath + 'x', bytes, { contentType: 'application/pdf' })
+        ).error,
+      )
+      assert.ok(
+        (
+          await a.storage
+            .from('customer-documents')
+            .update(filePath, bytes, { contentType: 'application/pdf' })
+        ).error,
+      )
+      await a.storage.from('customer-documents').remove([filePath])
+      assert.ok(ok(await admin.storage.from('customer-documents').download(filePath)))
+    },
+  )
+  await check(
+    'unscanned personal download requires uploader consent, never grants colleagues or foreign users',
+    async () => {
+      assert.equal((await endpoint(a, { document_id: documentId })).status, 403)
+      assert.equal(
+        (await endpoint(colleague, { document_id: documentId, accept_unscanned: true })).status,
+        403,
+      )
+      assert.equal(
+        (await endpoint(b, { document_id: documentId, accept_unscanned: true })).status,
+        403,
+      )
+    },
+  )
+  const response = await endpoint(a, { document_id: documentId, accept_unscanned: true })
+  assert.equal(response.status, 200)
+  const signed = (await response.json()).url
   const expiry = JSON.parse(
     Buffer.from(new URL(signed).searchParams.get('token').split('.')[1], 'base64url').toString(),
   ).exp
-  await check('private document view/download preserves bytes and filename', async () => {
-    const response = await fetch(signed)
-    assert.equal(response.status, 200)
-    assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes)
-    const download = ok(
-      await colleague.storage
-        .from('customer-documents')
-        .createSignedUrl(filePath, 60, { download: 'fictional-policy.pdf' }),
-    ).signedUrl
-    const downloaded = await fetch(download)
-    assert.match(downloaded.headers.get('content-disposition'), /fictional-policy.pdf/)
-    assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()), bytes)
+  await check('personal document uses attachment, exact bytes, and an audit event', async () => {
+    const download = await fetch(signed)
+    assert.equal(download.status, 200)
+    assert.match(download.headers.get('content-disposition'), /attachment/)
+    assert.deepEqual(Buffer.from(await download.arrayBuffer()), bytes)
+    assert.ok(
+      ok(await a.from('activities').select('id').eq('action_type', 'documents.access')).length,
+    )
   })
   await check(
-    'foreign storage listing, signing, upload, download and deletion denied',
+    'server upload validates content and attributes file to authenticated uploader',
     async () => {
-      assert.deepEqual(
-        ok(await b.storage.from('customer-documents').list(`${agencies[0]}/${ca.id}`)),
-        [],
-      )
-      assert.ok((await b.storage.from('customer-documents').createSignedUrl(filePath, 60)).error)
-      assert.ok((await b.storage.from('customer-documents').download(filePath)).error)
-      const foreignPath = `${agencies[0]}/${ca.id}/${randomUUID()}.pdf`
-      paths.add(foreignPath)
-      assert.ok(
-        (
-          await b.storage
-            .from('customer-documents')
-            .upload(foreignPath, bytes, { contentType: 'application/pdf' })
-        ).error,
-      )
-      await b.storage.from('customer-documents').remove([filePath])
-      assert.ok(ok(await a.storage.from('customer-documents').download(filePath)))
-      assert.ok((await client().storage.from('customer-documents').download(filePath)).error)
+      const invalid = new FormData()
+      invalid.set('file', new File(['fake PDF'], 'fake.pdf', { type: 'application/pdf' }))
+      invalid.set('customer_id', ca.id)
+      invalid.set('document_type', 'test')
+      assert.equal((await endpoint(a, invalid)).status, 400)
+      const valid = new FormData()
+      valid.set('file', new File([bytes], 'checked.pdf', { type: 'application/pdf' }))
+      valid.set('customer_id', ca.id)
+      valid.set('document_type', 'test')
+      const uploaded = await endpoint(a, valid)
+      assert.equal(uploaded.status, 201)
+      const id = (await uploaded.json()).id
+      const row = ok(await a.from('documents').select('*').eq('id', id).single())
+      paths.add(row.file_path)
+      assert.equal(row.uploaded_by, users[0].id)
+      assert.equal(row.scan_status, 'unscanned')
+      assert.match(row.content_sha256, /^[a-f0-9]{64}$/)
     },
   )
-  await check('same-agency document overwrite is prohibited', async () => {
-    assert.ok(
-      (
-        await colleague.storage
-          .from('customer-documents')
-          .update(filePath, bytes, { contentType: 'application/pdf' })
-      ).error,
-    )
-  })
-  await check('hosted desktop browser workflows and session isolation', () =>
-    runUI({
-      E2E_EMAIL: users[0].email,
-      E2E_PASSWORD: users[0].password,
-      E2E_OTHER_EMAIL: users[2].email,
-      E2E_OTHER_PASSWORD: users[2].password,
-    }),
+  await check(
+    'document archive preserves bytes, is audited, denies new links, and restores',
+    async () => {
+      assert.ok(
+        (await colleague.rpc('archive_document', { document_id: documentId, archived: true }))
+          .error,
+      )
+      ok(await a.rpc('archive_document', { document_id: documentId, archived: true }))
+      assert.equal(
+        (await endpoint(a, { document_id: documentId, accept_unscanned: true })).status,
+        403,
+      )
+      assert.ok(ok(await admin.storage.from('customer-documents').download(filePath)))
+      assert.ok(
+        ok(await a.from('activities').select('id').eq('action_type', 'documents.archive')).length,
+      )
+      ok(await a.rpc('archive_document', { document_id: documentId, archived: false }))
+      assert.equal(
+        (await endpoint(a, { document_id: documentId, accept_unscanned: true })).status,
+        200,
+      )
+    },
   )
-  await check('signed link expires after its 60-second validity', async () => {
-    const remaining = expiry * 1000 - Date.now() + 2000
-    if (remaining > 0) {
-      console.log(`Waiting ${Math.ceil(remaining / 1000)} seconds for signed-link expiration`)
-      await new Promise((resolve) => setTimeout(resolve, remaining))
-    }
-    const response = await fetch(signed, { headers: { 'Cache-Control': 'no-cache' } })
-    assert.ok(!response.ok, 'Expired signed URL must not return document bytes')
-  })
-  await check('deleting a document removes both bytes and metadata', async () => {
-    ok(await a.storage.from('customer-documents').remove([filePath]))
-    ok(await a.from('documents').delete().eq('id', documentId))
-    assert.deepEqual(ok(await a.from('documents').select('id').eq('id', documentId)), [])
+  await check('role changes are restricted and viewer writes denied immediately', async () => {
+    assert.ok(
+      (await colleague.rpc('set_member_role', { member_id: users[1].id, new_role: 'admin' })).error,
+    )
+    assert.ok(
+      (await a.rpc('set_member_role', { member_id: users[2].id, new_role: 'editor' })).error,
+    )
+    assert.ok(
+      (await a.rpc('set_member_role', { member_id: users[0].id, new_role: 'viewer' })).error,
+    )
+    ok(await a.rpc('set_member_role', { member_id: users[1].id, new_role: 'viewer' }))
     assert.deepEqual(
-      ok(await a.storage.from('customer-documents').list(`${agencies[0]}/${ca.id}`)),
+      ok(await colleague.from('customers').update({ notes: 'forbidden' }).eq('id', ca.id).select()),
       [],
     )
-    // Reusing a previously downloaded URL can return cached bytes after deletion.
-    // Check a fresh authenticated request as well as the authoritative object listing.
-    const session = ok(await a.auth.getSession()).session
-    const response = await fetch(
-      `${url}/storage/v1/object/authenticated/customer-documents/${filePath}?verification=${randomUUID()}`,
-      {
-        headers: {
-          apikey: publicKey,
-          Authorization: `Bearer ${session.access_token}`,
-          'Cache-Control': 'no-cache',
-        },
-      },
+    assert.ok((await colleague.rpc('authorize_document_request', { operation: 'upload' })).error)
+  })
+  if (process.env.E2E_BASE_URL)
+    await check('hosted production browser workflows and session isolation', () =>
+      runUI({
+        E2E_EMAIL: users[0].email,
+        E2E_PASSWORD: users[0].password,
+        E2E_OTHER_EMAIL: users[2].email,
+        E2E_OTHER_PASSWORD: users[2].password,
+      }),
     )
-    assert.ok(!response.ok, 'Deleted object must not be returned by a fresh request')
+  await check('signed links expire after sixty seconds', async () => {
+    const remaining = expiry * 1000 - Date.now() + 2000
+    if (remaining > 0) {
+      console.log(`Waiting ${Math.ceil(remaining / 1000)} seconds for signed-link expiry`)
+      await new Promise((resolve) => setTimeout(resolve, remaining))
+    }
+    assert.ok(!(await fetch(signed, { headers: { 'Cache-Control': 'no-cache' } })).ok)
+  })
+  await check('sign-out revokes database access even with the old access token', async () => {
+    const token = ok(await colleague.auth.getSession()).session.access_token
+    ok(await colleague.auth.signOut())
+    const r = await fetch(url + '/rest/v1/customers?select=id', {
+      headers: { apikey: publicKey, Authorization: `Bearer ${token}` },
+    })
+    const result = await r.json()
+    assert.ok(r.status === 401 || (r.ok && Array.isArray(result) && result.length === 0))
   })
   console.log(`${checks} hosted checks passed`)
 } finally {

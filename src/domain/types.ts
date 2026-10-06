@@ -20,6 +20,7 @@ export interface Profile {
   id: string
   agency_id: string
   full_name: string
+  role: 'admin' | 'editor' | 'viewer'
 }
 export interface Customer extends BaseRecord {
   import_key?: string
@@ -70,6 +71,8 @@ export interface DocumentRecord {
   uploaded_by: string
   file_size: number
   mime_type: string
+  scan_status?: 'unscanned' | 'pending' | 'clean' | 'rejected'
+  deleted_at?: string | null
 }
 export interface Activity {
   id: string

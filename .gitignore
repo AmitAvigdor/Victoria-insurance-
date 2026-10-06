@@ -10,3 +10,5 @@ test-results/
 .sites-runtime/
 .DS_Store
 supabase/.temp/
+__pycache__/
+*.pyc

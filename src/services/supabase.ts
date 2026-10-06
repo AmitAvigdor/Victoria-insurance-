@@ -30,6 +30,7 @@ async function all<T>(client: SupabaseClient, table: string, order: string): Pro
 export function supabaseRepository(client: SupabaseClient, identity: Identity): Repository {
   const agencyId = identity.profile.agency_id
   const save = async <T>(table: string, input: object, id?: string): Promise<T> => {
+    if (identity.profile.role === 'viewer') throw new Error('החשבון מוגדר לצפייה בלבד')
     const query = id
       ? client.from(table).update(input).eq('id', id)
       : client.from(table).insert({ ...input, agency_id: agencyId })
@@ -44,7 +45,9 @@ export function supabaseRepository(client: SupabaseClient, identity: Identity): 
         all<Customer>(client, 'customers', 'created_at'),
         all<Policy>(client, 'policies', 'created_at'),
         all<Task>(client, 'tasks', 'created_at'),
-        all<DocumentRecord>(client, 'documents', 'uploaded_at'),
+        all<DocumentRecord>(client, 'documents', 'uploaded_at').then((rows) =>
+          rows.filter((row) => !row.deleted_at),
+        ),
         all<Snapshot['activities'][number]>(client, 'activities', 'created_at'),
       ])
       return { customers, policies, tasks, documents, activities }
@@ -63,61 +66,33 @@ export function supabaseRepository(client: SupabaseClient, identity: Identity): 
       validateFile(file)
       if (!documentType.trim() || documentType.length > 100)
         throw new Error('יש להזין סוג מסמך (עד 100 תווים)')
-      const id = crypto.randomUUID()
-      const extensions: Record<string, string> = {
-        'application/pdf': 'pdf',
-        'image/jpeg': 'jpg',
-        'image/png': 'png',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-      }
-      const filePath = `${agencyId}/${customerId}/${id}.${extensions[file.type]}`
-      const { error: uploadError } = await client.storage
-        .from('customer-documents')
-        .upload(filePath, file, { contentType: file.type, upsert: false })
-      fail(uploadError)
-      const { error } = await client.from('documents').insert({
-        id,
-        agency_id: agencyId,
-        customer_id: customerId,
-        policy_id: policyId,
-        file_name: file.name,
-        file_path: filePath,
-        document_type: documentType.trim(),
-        uploaded_by: identity.profile.id,
-        file_size: file.size,
-        mime_type: file.type,
-      })
-      if (error) {
-        const { error: cleanupError } = await client.storage
-          .from('customer-documents')
-          .remove([filePath])
-        if (cleanupError)
-          throw new Error(
-            'שמירת פרטי המסמך נכשלה. נותר קובץ באחסון; יש לפנות למנהל הסוכנות לניקוי.',
-          )
-        fail(error)
-      }
+      const form = new FormData()
+      form.set('file', file)
+      form.set('customer_id', customerId)
+      form.set('policy_id', policyId || '')
+      form.set('document_type', documentType)
+      const { data, error } = await client.functions.invoke('documents', { body: form })
+      if (error || data?.error)
+        throw new Error(data?.error || 'העלאת המסמך נכשלה. בדקו הרשאות, סוג קובץ וחיבור.')
     },
     async documentUrl(document, download = false) {
-      const { data, error } = await client.storage
-        .from('customer-documents')
-        .createSignedUrl(document.file_path, 60, download ? { download: document.file_name } : {})
-      fail(error)
-      if (!data) throw new Error('לא ניתן לפתוח את המסמך')
-      return data.signedUrl
+      const { data, error } = await client.functions.invoke('documents', {
+        body: {
+          document_id: document.id,
+          download,
+          accept_unscanned: document.scan_status === 'unscanned',
+        },
+      })
+      if (error || !data?.url)
+        throw new Error(data?.error || 'המסמך טרם אושר בסריקת אבטחה או שאינו זמין')
+      return data.url
     },
     async deleteDocument(document) {
-      const { error: storageError } = await client.storage
-        .from('customer-documents')
-        .remove([document.file_path])
-      fail(storageError)
-      const { data, error } = await client
-        .from('documents')
-        .delete()
-        .eq('id', document.id)
-        .select('id')
+      const { error } = await client.rpc('archive_document', {
+        document_id: document.id,
+        archived: true,
+      })
       fail(error)
-      if (!data?.length) throw new Error('הקובץ הוסר אך עדכון הרשומה נכשל. רעננו ונסו שוב.')
     },
   }
 }

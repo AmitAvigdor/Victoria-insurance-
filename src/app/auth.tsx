@@ -35,6 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, current) => {
       if (active) {
+        if (!current) void client.cancelQueries().then(() => client.clear())
         setSession(current)
         setReady(true)
       }
@@ -58,14 +59,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       active = false
       subscription.unsubscribe()
     }
-  }, [])
+  }, [client])
   const identityQuery = useQuery({
     queryKey: ['identity', session?.user.id],
     enabled: !!session && !isDemo,
     queryFn: async (): Promise<Identity> => {
       const { data: profile, error } = await supabase!
         .from('profiles')
-        .select('id,agency_id,full_name')
+        .select('id,agency_id,full_name,role')
         .eq('id', session!.user.id)
         .single()
       if (error || !profile)
@@ -85,6 +86,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => (identity ? (isDemo ? demoRepository : supabaseRepository(supabase!, identity)) : null),
     [identity, isDemo],
   )
+  const sessionUserId = session?.user.id
+  useEffect(() => {
+    if (!sessionUserId || isDemo) return
+    const key = `victoria-last-active:${sessionUserId}`
+    const idleLimit = 15 * 60 * 1000
+    let last = Number(localStorage.getItem(key)) || Date.now()
+    let ending = false
+    const expire = async () => {
+      if (ending) return
+      ending = true
+      setSession(null)
+      await client.cancelQueries()
+      client.clear()
+      await supabase!.auth.signOut({ scope: 'local' })
+    }
+    const check = () => {
+      last = Math.max(last, Number(localStorage.getItem(key)) || 0)
+      if (Date.now() - last >= idleLimit) void expire()
+    }
+    const activity = () => {
+      check()
+      if (!ending && Date.now() - last > 1000) {
+        last = Date.now()
+        localStorage.setItem(key, String(last))
+      }
+    }
+    check()
+    const timer = window.setInterval(check, 10000)
+    const events = ['pointerdown', 'keydown', 'scroll'] as const
+    for (const event of events) window.addEventListener(event, activity, { passive: true })
+    window.addEventListener('focus', check)
+    document.addEventListener('visibilitychange', check)
+    return () => {
+      clearInterval(timer)
+      for (const event of events) window.removeEventListener(event, activity)
+      window.removeEventListener('focus', check)
+      document.removeEventListener('visibilitychange', check)
+    }
+  }, [sessionUserId, isDemo, client])
   const value: AuthState = {
     identity,
     repository,
@@ -99,8 +139,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     login: async (email, password) => {
       if (!supabase) throw new Error('יש להשלים את הגדרות Supabase לפני התחברות')
       setSessionError(null)
-      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      })
       if (error) throw new Error('ההתחברות נכשלה. בדקו את כתובת האימייל והסיסמה ונסו שוב.')
+      if (data.user)
+        localStorage.setItem(`victoria-last-active:${data.user.id}`, String(Date.now()))
     },
     enterDemo: () => {
       if (!demoEnabled) return

@@ -17,6 +17,7 @@ import { Renewals } from '@/pages/Renewals'
 import { Tasks } from '@/pages/Tasks'
 import { Documents } from '@/pages/Documents'
 import { SearchPage } from '@/pages/Search'
+import { Security } from '@/pages/Security'
 import { errorMessage } from '@/lib/utils'
 const ImportPage = lazy(() => import('@/pages/Import'))
 const queryClient = new QueryClient({
@@ -96,6 +97,7 @@ export default function App() {
               <Route path="tasks" element={<Tasks />} />
               <Route path="documents" element={<Documents />} />
               <Route path="search" element={<SearchPage />} />
+              <Route path="security" element={<Security />} />
               <Route
                 path="*"
                 element={

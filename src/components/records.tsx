@@ -214,11 +214,20 @@ export function TasksList({ tasks }: { tasks: Task[] }) {
 }
 export function DocumentsTable({ documents }: { documents: DocumentRecord[] }) {
   const { data } = useData()
-  const { repository } = useAuth()
+  const { repository, identity } = useAuth()
   const edit = useEditors()
   const [busy, setBusy] = useState<string | null>(null)
   async function open(doc: DocumentRecord, download: boolean) {
     if (!repository) return
+    if (doc.scan_status === 'unscanned') {
+      if (
+        !window.confirm(
+          'המסמך לא עבר סריקת אנטיוירוס. הורד אותו רק אם אתה מכיר וסומך על המקור שלו. להמשיך בהורדה?',
+        )
+      )
+        return
+      download = true
+    }
     setBusy(doc.id)
     const tab = !download ? window.open('about:blank', '_blank') : null
     if (tab) tab.opener = null
@@ -273,6 +282,15 @@ export function DocumentsTable({ documents }: { documents: DocumentRecord[] }) {
                 <tr key={d.id}>
                   <td>
                     <strong>{d.file_name}</strong>
+                    {d.scan_status === 'unscanned' && (
+                      <p className="small muted">לא נסרק באנטיוירוס · הורדה באישור המעלה בלבד</p>
+                    )}
+                    {d.scan_status === 'pending' && (
+                      <p className="small muted">ממתין לסריקת אבטחה — הפתיחה חסומה</p>
+                    )}
+                    {d.scan_status === 'rejected' && (
+                      <p className="form-error">המסמך נחסם בבדיקת האבטחה</p>
+                    )}
                   </td>
                   <td>
                     <CustomerLink customer={data?.customers.find((c) => c.id === d.customer_id)} />
@@ -293,7 +311,15 @@ export function DocumentsTable({ documents }: { documents: DocumentRecord[] }) {
                       <Button
                         variant="ghost"
                         size="icon"
-                        disabled={busy === d.id}
+                        disabled={
+                          busy === d.id ||
+                          (d.scan_status !== undefined &&
+                            d.scan_status !== 'clean' &&
+                            !(
+                              d.scan_status === 'unscanned' &&
+                              d.uploaded_by === identity?.profile.id
+                            ))
+                        }
                         aria-label={`צפייה במסמך ${d.file_name}`}
                         onClick={() => void open(d, false)}
                       >
@@ -302,7 +328,15 @@ export function DocumentsTable({ documents }: { documents: DocumentRecord[] }) {
                       <Button
                         variant="ghost"
                         size="icon"
-                        disabled={busy === d.id}
+                        disabled={
+                          busy === d.id ||
+                          (d.scan_status !== undefined &&
+                            d.scan_status !== 'clean' &&
+                            !(
+                              d.scan_status === 'unscanned' &&
+                              d.uploaded_by === identity?.profile.id
+                            ))
+                        }
                         aria-label={`הורדת מסמך ${d.file_name}`}
                         onClick={() => void open(d, true)}
                       >
@@ -312,6 +346,7 @@ export function DocumentsTable({ documents }: { documents: DocumentRecord[] }) {
                         variant="ghost"
                         size="icon"
                         aria-label={`מחיקת מסמך ${d.file_name}`}
+                        disabled={identity?.profile.role !== 'admin'}
                         onClick={() => edit({ kind: 'delete-document', record: d })}
                       >
                         <Trash2 size={16} />

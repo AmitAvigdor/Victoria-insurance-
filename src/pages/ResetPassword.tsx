@@ -22,7 +22,8 @@ export function ResetPassword() {
     const password = String(f.get('password'))
     const confirmation = String(f.get('confirmation'))
     try {
-      if (password.length < 8) throw new Error('הסיסמה צריכה לכלול לפחות 8 תווים.')
+      if (password.length < 12)
+        throw new Error('הסיסמה צריכה לכלול לפחות 12 תווים. מומלץ משפט סיסמה ייחודי.')
       if (password !== confirmation) throw new Error('הסיסמאות אינן זהות.')
       const { error } = await supabase.auth.updateUser({ password })
       if (error) throw error
@@ -79,7 +80,7 @@ export function ResetPassword() {
               name="password"
               type="password"
               dir="ltr"
-              minLength={8}
+              minLength={12}
               autoComplete="new-password"
               required
               disabled={busy || auth.loading || !auth.authenticated}
@@ -92,7 +93,7 @@ export function ResetPassword() {
               name="confirmation"
               type="password"
               dir="ltr"
-              minLength={8}
+              minLength={12}
               autoComplete="new-password"
               required
               disabled={busy || auth.loading || !auth.authenticated}

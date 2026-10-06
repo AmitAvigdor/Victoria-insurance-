@@ -75,8 +75,19 @@ const Input = ({
 )
 export function EditorsProvider({ children }: { children: ReactNode }) {
   const [editor, setEditor] = useState<Editor | null>(null)
+  const { identity } = useAuth()
+  const open = (next: Editor) => {
+    if (
+      identity?.profile.role === 'viewer' ||
+      (next.kind === 'delete-document' && identity?.profile.role !== 'admin')
+    ) {
+      toast.error('אין לך הרשאה לפעולה זו. יש לפנות למנהל הסוכנות.')
+      return
+    }
+    setEditor(next)
+  }
   return (
-    <EditorsContext.Provider value={setEditor}>
+    <EditorsContext.Provider value={open}>
       {children}
       {editor && <EditorDialog editor={editor} close={() => setEditor(null)} />}
     </EditorsContext.Provider>
@@ -187,7 +198,13 @@ function EditorDialog({ editor, close }: { editor: Editor; close: () => void }) 
           break
       }
       await refresh()
-      toast.success(editor.kind === 'delete-document' ? 'המסמך נמחק' : 'השינויים נשמרו בהצלחה')
+      toast.success(
+        editor.kind === 'delete-document'
+          ? 'המסמך הועבר לסל המחזור'
+          : editor.kind === 'document'
+            ? 'המסמך הועלה לאחסון הפרטי'
+            : 'השינויים נשמרו בהצלחה',
+      )
       close()
       if (newCustomer) navigate(`/customers/${newCustomer}`)
     } catch (e) {
@@ -482,7 +499,7 @@ function EditorDialog({ editor, close }: { editor: Editor; close: () => void }) 
             )}
             {editor.kind === 'delete-document' && (
               <p className="field wide">
-                למחוק את ״{editor.record.file_name}״? הקובץ יימחק לצמיתות ולא ניתן יהיה לשחזר אותו.
+                למחוק את ״{editor.record.file_name}״? המסמך יועבר לסל המחזור וניתן יהיה לשחזר אותו במסך אבטחה והרשאות.
               </p>
             )}
           </div>

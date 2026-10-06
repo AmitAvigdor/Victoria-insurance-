@@ -1,0 +1,6 @@
+project_id = "victoria"
+
+[functions.documents]
+# The handler validates the access token with Auth and the active session with SQL.
+# Gateway legacy JWT verification rejects modern publishable keys.
+verify_jwt = false

@@ -32,6 +32,7 @@ const nav = [
   { path: '/tasks', label: 'משימות', icon: CheckSquare },
   { path: '/documents', label: 'מסמכים', icon: Files },
   { path: '/import', label: 'ייבוא מאקסל', icon: FileSpreadsheet },
+  { path: '/security', label: 'אבטחה והרשאות', icon: ShieldCheck },
 ]
 export function Layout() {
   const { identity, isDemo, logout } = useAuth()
@@ -145,7 +146,13 @@ export function Layout() {
                   </div>
                   <span>
                     <strong>{identity?.profile.full_name}</strong>
-                    <small>סוכן ביטוח</small>
+                    <small>
+                      {identity?.profile.role === 'admin'
+                        ? 'מנהל סוכנות'
+                        : identity?.profile.role === 'viewer'
+                          ? 'צפייה בלבד'
+                          : 'סוכן ביטוח'}
+                    </small>
                   </span>
                   <ChevronsUpDown size={14} color="#98a58e" />
                 </button>
