@@ -2,6 +2,16 @@
 
 Updated 6 October 2026. Victoria uses Supabase project `hnrvswoxppipwwrpanwp` and is hosted at https://victoria-insurance-tau.vercel.app.
 
+## Personal-use security hardening — 6 October 2026
+
+See `SECURITY-HARDENING.md` for the current security model and its limitations. MFA is explicitly not required at the owner's request. Public signup is disabled, password/session/redirect settings are hardened, database TLS is enforced, and Vercel framing/CSP headers are live. Documents use a protected server function and audited reversible deletion. Unscanned personal files require uploader confirmation and forced download; this is not antivirus scanning.
+
+37 unit tests, 46 baseline PostgreSQL checks, 20 new hardening checks, eight handler checks and ten desktop/mobile demo browser scenarios passed. The final hosted run passed 25 checks including the deployed document workflow and restore. The other three deployed browser scenarios (agency switching, responsive bounds and idle expiry/fresh login) passed in the preceding run. The document test locator was updated to accommodate the new status label and rerun successfully. All generated hosted fixtures were removed. A browser confirmed iframe embedding is blocked. Final npm audit reported zero known vulnerabilities.
+
+The following feature/baseline sections are historical; earlier descriptions of direct Storage access and permanent document deletion have been superseded.
+
+Production password recovery was also reverified after hardening: invalid link rejection, correct production redirect, confirmation validation, successful password change and old-password rejection. The temporary account was removed; no email was sent.
+
 ## Vehicle workbook adaptation
 
 - Exact provided headers are detected. Missing IDs, phones and policy numbers are not fabricated. Compulsory/comprehensive coverage, registration, commission and unnamed extra-column values are preserved. Annual premium is left unknown rather than inferred from ambiguous source values.

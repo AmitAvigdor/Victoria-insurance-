@@ -45,7 +45,13 @@ async function runUI(env) {
   await new Promise((resolve, reject) => {
     const child = spawn(
       process.execPath,
-      ['node_modules/@playwright/test/cli.js', 'test', '--project=chromium', '--workers=1'],
+      [
+        'node_modules/@playwright/test/cli.js',
+        'test',
+        '--project=chromium',
+        '--workers=1',
+        ...(process.env.E2E_GREP ? ['--grep', process.env.E2E_GREP] : []),
+      ],
       {
         stdio: 'inherit',
         env: { ...process.env, E2E_LIVE: 'true', ...env },
