@@ -1,7 +1,7 @@
 /* global self, caches */
 
-const CACHE_NAME = 'victoria-app-shell-v1'
-const APP_SHELL = ['/', '/favicon.svg', '/manifest.webmanifest']
+const CACHE_NAME = 'victoria-app-shell-v2-brand'
+const APP_SHELL = ['/', '/branding/victoria-favicon.png', '/manifest.webmanifest']
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

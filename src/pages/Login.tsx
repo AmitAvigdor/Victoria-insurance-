@@ -5,6 +5,7 @@ import { useAuth } from '@/app/auth'
 import { demoEnabled, isConfigured, supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { errorMessage } from '@/lib/utils'
+import { Brand, BrandSignature } from '@/components/Brand'
 export function Login() {
   const auth = useAuth()
   const location = useLocation()
@@ -55,15 +56,10 @@ export function Login() {
     <div className="login-page">
       <aside className="login-aside">
         <div className="brand">
-          <div className="brand-mark">
-            <img src="/favicon.svg" alt="" />
-          </div>
-          <div>
-            <div className="brand-name">ויקטוריה</div>
-            <div className="brand-caption">כל הסוכנות. במקום אחד.</div>
-          </div>
+          <Brand />
         </div>
-        <div>
+        <div className="login-brand-story">
+          <BrandSignature />
           <h1>
             פחות קצוות פתוחים.
             <br />
@@ -81,6 +77,7 @@ export function Login() {
       </aside>
       <main className="login-form-wrap">
         <form className="login-form" onSubmit={submit}>
+          <BrandSignature className="mobile-auth-brand" />
           <div className="eyebrow">ברוכים הבאים לוויקטוריה</div>
           <h1>טוב שחזרת</h1>
           <p>כניסה לסביבת העבודה של הסוכנות</p>

@@ -27,6 +27,7 @@ import { renewals } from '@/domain/selectors'
 import { errorMessage } from '@/lib/utils'
 import { Button } from './ui/button'
 import { DataBoundary } from './shared'
+import { Brand } from './Brand'
 const nav = [
   { path: '/', label: 'דשבורד', icon: LayoutDashboard },
   { path: '/search', label: 'חיפוש', icon: Search },
@@ -73,13 +74,7 @@ export function Layout() {
         aria-label="תפריט ראשי"
       >
         <NavLink to="/" className="brand" onClick={() => setMenu(false)}>
-          <div className="brand-mark">
-            <img src="/favicon.svg" alt="" />
-          </div>
-          <div>
-            <div className="brand-name">ויקטוריה</div>
-            <div className="brand-caption">כל הסוכנות. במקום אחד.</div>
-          </div>
+          <Brand />
         </NavLink>
         <div className="workspace">
           <div className="workspace-icon">
@@ -161,7 +156,7 @@ export function Layout() {
                           : 'סוכן ביטוח'}
                     </small>
                   </span>
-                  <ChevronsUpDown size={14} color="#98a58e" />
+                  <ChevronsUpDown size={14} color="var(--muted)" />
                 </button>
               </DropdownMenu.Trigger>
               <DropdownMenu.Portal>

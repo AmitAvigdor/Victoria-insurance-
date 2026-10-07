@@ -6,6 +6,7 @@ import { useAuth } from '@/app/auth'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 import { errorMessage } from '@/lib/utils'
+import { Brand, BrandSignature } from '@/components/Brand'
 
 export function ResetPassword() {
   const auth = useAuth()
@@ -41,15 +42,10 @@ export function ResetPassword() {
     <div className="login-page">
       <aside className="login-aside">
         <div className="brand">
-          <div className="brand-mark">
-            <img src="/favicon.svg" alt="" />
-          </div>
-          <div>
-            <div className="brand-name">ויקטוריה</div>
-            <div className="brand-caption">כל הסוכנות. במקום אחד.</div>
-          </div>
+          <Brand />
         </div>
-        <div>
+        <div className="login-brand-story">
+          <BrandSignature />
           <h1>
             קביעת סיסמה חדשה.
             <br />
@@ -60,6 +56,7 @@ export function ResetPassword() {
       </aside>
       <main className="login-form-wrap">
         <form className="login-form" onSubmit={submit}>
+          <BrandSignature className="mobile-auth-brand" />
           <div className="eyebrow">איפוס סיסמה</div>
           <h1>סיסמה חדשה</h1>
           <p>הקישור תקף לזמן קצר בלבד.</p>
