@@ -34,7 +34,33 @@ export interface Customer extends BaseRecord {
   notes: string
   archived_at: string | null
 }
+export const renewalStages = [
+  'טרם טופל',
+  'יצרתי קשר',
+  'נשלחה הצעה',
+  'ממתין ללקוח',
+  'חודש',
+  'לא חודש',
+] as const
+export type RenewalStage = (typeof renewalStages)[number]
+export interface RenewalInput {
+  stage: RenewalStage
+  follow_up: string | null
+  note: string
+}
+export interface ReviewedUpdate {
+  table: 'customers' | 'policies'
+  id: string
+  updated_at: string
+  patch: Record<string, unknown>
+}
 export interface Policy extends BaseRecord {
+  renewal_stage?: RenewalStage
+  renewal_follow_up?: string | null
+  renewal_notes?: string
+  commission_expected_amount?: number | null
+  commission_received_amount?: number
+  commission_due_date?: string | null
   customer_id: string
   insurance_company: string
   policy_number: string

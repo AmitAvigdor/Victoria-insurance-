@@ -33,6 +33,9 @@ export default function ImportPage() {
   const [fileName, setFileName] = useState('')
   const [mode, setMode] = useState<ImportMode>('customers')
   const [mapping, setMapping] = useState<Mapping>({})
+  const [updateExisting, setUpdateExisting] = useState(false)
+  const [selectedChanges, setSelectedChanges] = useState<Record<string, boolean>>({})
+  const [vehiclePolicyLinks, setVehiclePolicyLinks] = useState<Record<number, string>>({})
   const [vehicleLinks, setVehicleLinks] = useState<Record<number, string>>({})
   const [reviewSnapshot, setReviewSnapshot] = useState<Snapshot | null>(null)
   const [keepExtra, setKeepExtra] = useState(true)
@@ -69,7 +72,17 @@ export default function ImportPage() {
   const headers = useMemo(() => (sheet ? headersFor(sheet, headerRow) : []), [sheet, headerRow])
   const extras = headers.filter((_, i) => !Object.values(mapping).includes(i))
   const options: ImportOptions | undefined = sheet
-    ? { sheet, headerRow, mode, mapping, keepExtra, vehicleLinks }
+    ? {
+        sheet,
+        headerRow,
+        mode,
+        mapping,
+        keepExtra,
+        vehicleLinks,
+        updateExisting,
+        selectedChanges,
+        vehiclePolicyLinks,
+      }
     : undefined
   const ready = plan.rows.filter((row) => row.action === 'ready')
   const invalid = plan.rows.filter((row) => row.action === 'error').length
@@ -79,6 +92,8 @@ export default function ImportPage() {
     const selected = sheets[index]
     const nextMode = chosenMode || detectImportMode(headersFor(selected, header), mode)
     setVehicleLinks({})
+    setSelectedChanges({})
+    setVehiclePolicyLinks({})
     setSheetIndex(index)
     setHeaderRow(header)
     setMode(nextMode)
@@ -96,6 +111,8 @@ export default function ImportPage() {
     setPlan(emptyPlan)
     setConfirmed(false)
     setVehicleLinks({})
+    setSelectedChanges({})
+    setVehiclePolicyLinks({})
     if (!/\.(xlsx|xls|csv)$/i.test(file.name)) {
       setError('בחרו קובץ XLSX, XLS או CSV')
       return
@@ -154,7 +171,8 @@ export default function ImportPage() {
     try {
       const snapshot = await repository.load()
       setReviewSnapshot(snapshot)
-      setPlan(prepareImport(options, snapshot))
+      setSelectedChanges({})
+      setPlan(prepareImport({ ...options, selectedChanges: {} }, snapshot))
       setConfirmed(false)
       setStep('preview')
     } catch (e) {
@@ -169,7 +187,25 @@ export default function ImportPage() {
     const next = { ...vehicleLinks, [rowNumber]: value }
     setVehicleLinks(next)
     setConfirmed(false)
-    setPlan(prepareImport({ ...options, vehicleLinks: next }, reviewSnapshot))
+    setSelectedChanges({})
+    setPlan(prepareImport({ ...options, vehicleLinks: next, selectedChanges: {} }, reviewSnapshot))
+  }
+  function changeSelection(key: string, value: boolean) {
+    if (!options || !reviewSnapshot) return
+    const next = { ...selectedChanges, [key]: value }
+    setSelectedChanges(next)
+    setConfirmed(false)
+    setPlan(prepareImport({ ...options, selectedChanges: next }, reviewSnapshot))
+  }
+  function changePolicyLink(rowNumber: number, value: string) {
+    if (!options || !reviewSnapshot) return
+    const next = { ...vehiclePolicyLinks, [rowNumber]: value }
+    setVehiclePolicyLinks(next)
+    setSelectedChanges({})
+    setConfirmed(false)
+    setPlan(
+      prepareImport({ ...options, vehiclePolicyLinks: next, selectedChanges: {} }, reviewSnapshot),
+    )
   }
   async function run() {
     if (!options || !repository || !confirmed || !ready.length || busyRef.current) return
@@ -335,7 +371,9 @@ export default function ImportPage() {
                 אפשר לשייך שם פרטי ומשפחה בנפרד.
               </p>
               <p className="small">
-                {mode === 'vehicles' ? (
+                {updateExisting ? (
+                  'מצב עדכון: בדקו את הערך הקודם והחדש וסמנו רק שדות שברצונכם לשנות. אין איחוד אוטומטי לפי שם. שינוי תאריך סיום בביטוח רכב דורש בחירת פוליסה קיימת; תקופה חדשה עם תאריך התחלה חדש תיצור ביטוח נוסף.'
+                ) : mode === 'vehicles' ? (
                   'המסלול מותאם לקובץ שלך: שם המבוטח, חברת הביטוח, תחילת הביטוח, סיום הביטוח, חובה, מקיף, מספר רישוי, עמלה והערות. אין צורך בת״ז, טלפון או מספר פוליסה. חובה, מקיף ועמלה יישמרו כפי שמופיעים בקובץ, בלי חישוב פרמיה או המרת אחוזים. כל שורה תיצור רשומת ביטוח רכב אחת. ניתן לשייך מבוטחים בשלב הבדיקה.'
                 ) : (
                   <>
@@ -402,6 +440,17 @@ export default function ImportPage() {
                   {!keepExtra && <p>המידע בעמודות האלו לא יישמר.</p>}
                 </div>
               )}
+              <label className="import-check import-note">
+                <input
+                  type="checkbox"
+                  checked={updateExisting}
+                  onChange={(e) => {
+                    setUpdateExisting(e.target.checked)
+                    setSelectedChanges({})
+                  }}
+                />
+                אפשר עדכון רשומות קיימות — אבחר כל שדה בתצוגת לפני ואחרי
+              </label>
               <div className="form-actions">
                 <Button onClick={() => void preview()} disabled={reviewing}>
                   {reviewing ? 'בודק נתונים…' : 'בדיקה ותצוגה מקדימה'}
@@ -425,7 +474,8 @@ export default function ImportPage() {
           <p>
             {ready.filter((r) => r.customer).length} לקוחות חדשים ·{' '}
             {ready.filter((r) => r.policy).length} פוליסות חדשות ·{' '}
-            {ready.filter((r) => r.task).length} משימות חדשות
+            {ready.filter((r) => r.task).length} משימות חדשות ·{' '}
+            {ready.reduce((n, r) => n + (r.updates?.length || 0), 0)} רשומות לעדכון
           </p>
           <p className="import-note">
             {mode === 'vehicles' ? (
@@ -512,9 +562,26 @@ export default function ImportPage() {
                                       </option>
                                     ))}
                                 </optgroup>
+                                {!!row.suggestedCustomerIds?.length && (
+                                  <optgroup label="הצעות לפי שם זהה — יש לבדוק פרטים">
+                                    <>
+                                      {reviewSnapshot?.customers
+                                        .filter((c) => row.suggestedCustomerIds?.includes(c.id))
+                                        .map((c) => (
+                                          <option key={c.id} value={`record:${c.id}`}>
+                                            {fullName(c)} ·{' '}
+                                            {c.identification_number || c.phone || 'ללא פרטי קשר'}
+                                          </option>
+                                        ))}
+                                    </>
+                                  </optgroup>
+                                )}
                                 <optgroup label="לקוחות קיימים">
                                   {reviewSnapshot?.customers
-                                    .filter((c) => !c.archived_at)
+                                    .filter(
+                                      (c) =>
+                                        !c.archived_at && !row.suggestedCustomerIds?.includes(c.id),
+                                    )
                                     .map((c) => (
                                       <option key={c.id} value={`record:${c.id}`}>
                                         {fullName(c)} ·{' '}
@@ -534,6 +601,50 @@ export default function ImportPage() {
                                 </optgroup>
                               </select>
                             </label>
+                          )}
+                          {updateExisting && !!row.policyCandidates?.length && (
+                            <label className="field">
+                              <span>עדכון פוליסת רכב קיימת (במקום יצירה חדשה)</span>
+                              <select
+                                className="field-control"
+                                aria-label={`פוליסה לעדכון בשורה ${row.rowNumber}`}
+                                value={vehiclePolicyLinks[row.rowNumber] || ''}
+                                onChange={(e) => changePolicyLink(row.rowNumber, e.target.value)}
+                              >
+                                <option value="">לפי זיהוי הייבוא / יצירה חדשה</option>
+                                {row.policyCandidates.map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
+                          {!!row.changes?.length && (
+                            <section className="import-changes">
+                              <h3>שינויים לאישור — לפני ואחרי</h3>
+                              {row.changes.map((change) => (
+                                <label className="import-check" key={change.key}>
+                                  <input
+                                    type="checkbox"
+                                    checked={change.selected}
+                                    onChange={(e) => changeSelection(change.key, e.target.checked)}
+                                  />
+                                  <span>
+                                    {change.table === 'customers' ? 'לקוח' : 'פוליסה'} ·{' '}
+                                    {fieldsFor('combined').find(([k]) => k === change.field)?.[1] ||
+                                      fieldsFor('vehicles').find(
+                                        ([k]) => k === change.field,
+                                      )?.[1] ||
+                                      change.field}
+                                    <br />
+                                    לפני: {String(change.before ?? '') || 'ריק'}
+                                    <br />
+                                    אחרי: {String(change.after ?? '') || 'ריק (מחיקת ערך)'}
+                                  </span>
+                                </label>
+                              ))}
+                            </section>
                           )}
                           {[...row.errors, ...row.warnings].map((message, i) => (
                             <p key={i}>{message}</p>
@@ -623,8 +734,8 @@ export default function ImportPage() {
             נשמרו {result.customers} לקוחות, {result.policies} פוליסות ו־{result.tasks} משימות.
           </p>
           <p className="muted">
-            רשומות שנשמרו זמינות כעת במערכת. אפשר להוריד דוח עם התוצאה של כל שורה. בייבוא נוסף
-            רשומות שכבר קיימות ידולגו.
+            עודכנו {result.updated} רשומות קיימות. רשומות שנשמרו זמינות כעת במערכת. אפשר להוריד דוח
+            עם התוצאה של כל שורה. בייבוא נוסף רשומות שכבר קיימות ידולגו.
           </p>
           <Paginated items={result.rows} pageSize={20}>
             {(rows) => (

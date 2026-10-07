@@ -8,7 +8,13 @@ import type {
   Task,
   TaskInput,
 } from '@/domain/types'
-import { customerSchema, policySchema, taskSchema, validateFile } from '@/domain/validation'
+import {
+  customerSchema,
+  policySchema,
+  taskSchema,
+  validateFile,
+  renewalSchema,
+} from '@/domain/validation'
 import { createDemoData, demoAgencyId, demoUserId } from './demo-seed'
 import type { Repository } from './repository'
 const database = () =>
@@ -60,6 +66,47 @@ function checkLinks(s: Snapshot, customerId: string | null, policyId: string | n
 }
 export const demoRepository: Repository = {
   load: read,
+  async saveRenewal(policy, input) {
+    const parsed = renewalSchema.parse(input)
+    await mutate((s) => {
+      const p = s.policies.find((p) => p.id === policy.id)
+      if (!p || p.updated_at !== policy.updated_at)
+        throw new Error('הרשומה השתנתה. רעננו ובדקו שוב')
+      p.renewal_stage = parsed.stage
+      p.renewal_follow_up = parsed.follow_up
+      p.renewal_notes = parsed.note
+      p.updated_at = new Date().toISOString()
+      audit(s, p.customer_id, 'renewal.updated', `חידוש: ${parsed.stage} · ${parsed.note}`)
+    })
+  },
+  async addContactNote(customerId, note) {
+    if (!note.trim() || note.length > 5000) throw new Error('יש להזין סיכום עד 5000 תווים')
+    await mutate((s) => {
+      checkLinks(s, customerId)
+      audit(s, customerId, 'contact.note', note.trim())
+    })
+  },
+  async applyImportUpdates(updates) {
+    await mutate((s) => {
+      for (const u of updates) {
+        const row = s[u.table].find((r) => r.id === u.id)
+        if (!row || row.updated_at !== u.updated_at)
+          throw new Error('הרשומה השתנתה. רעננו ובדקו שוב')
+        if (u.table === 'customers') customerSchema.parse({ ...row, ...u.patch })
+        else policySchema.parse({ ...row, ...u.patch })
+      }
+      for (const u of updates) {
+        const row = s[u.table].find((r) => r.id === u.id)!
+        Object.assign(row, u.patch, { updated_at: new Date().toISOString() })
+        audit(
+          s,
+          u.table === 'customers' ? row.id : (row as Policy).customer_id,
+          'import.updated',
+          'עודכנו שדות שאושרו בייבוא',
+        )
+      }
+    })
+  },
   async saveCustomer(input: CustomerInput, id?: string) {
     const parsed = customerSchema.parse(input)
     return mutate((s) => {

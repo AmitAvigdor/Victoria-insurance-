@@ -5,6 +5,7 @@ export interface ImportResult {
   customers: number
   policies: number
   tasks: number
+  updated: number
   rows: { rowNumber: number; status: string; detail: string }[]
 }
 export async function executeImport(
@@ -21,7 +22,7 @@ export async function executeImport(
       'הנתונים במערכת השתנו מאז התצוגה המקדימה. חזרו להתאמת העמודות וצרו תצוגה מקדימה חדשה.',
     )
   if (fresh.errors.length) throw new Error(fresh.errors.join('; '))
-  const result: ImportResult = { customers: 0, policies: 0, tasks: 0, rows: [] }
+  const result: ImportResult = { customers: 0, policies: 0, tasks: 0, updated: 0, rows: [] }
   const customerIds = new Map(snapshot.customers.map((c) => [c.identification_number, c.id]))
   for (const customer of snapshot.customers) {
     customerIds.set(`record:${customer.id}`, customer.id)
@@ -44,6 +45,11 @@ export async function executeImport(
     } else {
       const saved: string[] = []
       try {
+        if (row.updates?.length) {
+          await repository.applyImportUpdates(row.updates)
+          result.updated += row.updates.length
+          saved.push('עדכון שדות שאושרו')
+        }
         const customerKey = row.customerKey || row.identification
         let customerId = customerIds.get(customerKey)
         if (row.customer && !customerId) {

@@ -172,11 +172,15 @@ test('exact vehicle workbook imports without fabricated IDs and keeps all source
   await expect(page.getByLabel('מספר זהות', { exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'בדיקה ותצוגה מקדימה', exact: true }).click()
   await expect(
-    page.getByText('2 לקוחות חדשים · 2 פוליסות חדשות · 0 משימות חדשות', { exact: true }),
+    page.getByText('2 לקוחות חדשים · 2 פוליסות חדשות · 0 משימות חדשות · 0 רשומות לעדכון', {
+      exact: true,
+    }),
   ).toBeVisible()
   await page.getByLabel('שיוך מבוטח בשורה 3', { exact: true }).selectOption('row:2')
   await expect(
-    page.getByText('1 לקוחות חדשים · 2 פוליסות חדשות · 0 משימות חדשות', { exact: true }),
+    page.getByText('1 לקוחות חדשים · 2 פוליסות חדשות · 0 משימות חדשות · 0 רשומות לעדכון', {
+      exact: true,
+    }),
   ).toBeVisible()
   await page.locator('summary').first().click()
   await expect(
@@ -217,4 +221,82 @@ test('exact vehicle workbook imports without fabricated IDs and keeps all source
   await page.getByLabel('חיפוש פוליסות', { exact: true }).fill('12-345-67')
   await page.getByRole('button', { name: 'רכב 12-345-67', exact: true }).click()
   await expect(page.getByRole('dialog').getByLabel('עמלה', { exact: true })).toHaveValue('15%')
+})
+
+test('reviewed vehicle update saves only the checked field and keeps one policy', async ({
+  page,
+}) => {
+  await enter(page)
+  const row = [
+    'לקוח עדכון',
+    'מבטח עדכון',
+    '01/01/2026',
+    '31/12/2026',
+    '1200',
+    'כיסוי',
+    '77-888-99',
+    '12%',
+    'הערה',
+  ]
+  function file(values: string[]) {
+    const book = utils.book_new()
+    utils.book_append_sheet(
+      book,
+      utils.aoa_to_sheet([
+        [
+          'שם המבוטח',
+          'חברת הביטוח',
+          'תחילת הביטוח',
+          'סיום הביטוח',
+          'חובה',
+          'מקיף',
+          'מספר רישוי',
+          'עמלה',
+          'הערות',
+        ],
+        values,
+      ]),
+      'רכב',
+    )
+    return {
+      name: 'update.xlsx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      buffer: Buffer.from(write(book, { type: 'buffer', bookType: 'xlsx' })),
+    }
+  }
+  await page.getByLabel('קובץ אקסל לייבוא', { exact: true }).setInputFiles(file(row))
+  await page.getByRole('button', { name: 'בדיקה ותצוגה מקדימה', exact: true }).click()
+  await page.getByRole('checkbox').check()
+  await page.getByRole('button', { name: 'ייבוא הנתונים', exact: true }).click()
+  await expect(
+    page.getByText('נשמרו 1 לקוחות, 1 פוליסות ו־0 משימות.', { exact: true }),
+  ).toBeVisible()
+  await page.getByRole('button', { name: 'ייבוא נוסף / ניסיון חוזר', exact: true }).click()
+  const changed = [...row]
+  changed[4] = '1400'
+  changed[7] = '15%'
+  await page.getByLabel('קובץ אקסל לייבוא', { exact: true }).setInputFiles(file(changed))
+  await page
+    .getByRole('checkbox', { name: 'אפשר עדכון רשומות קיימות — אבחר כל שדה בתצוגת לפני ואחרי' })
+    .check()
+  await page.getByRole('button', { name: 'בדיקה ותצוגה מקדימה', exact: true }).click()
+  await expect(page.getByText('0 שורות מוכנות', { exact: true })).toBeVisible()
+  await page
+    .locator('.import-changes label')
+    .filter({ hasText: 'פוליסה · עמלה' })
+    .getByRole('checkbox')
+    .check()
+  await expect(page.getByText('1 שורות מוכנות', { exact: true })).toBeVisible()
+  await page.getByRole('checkbox', { name: /בדקתי את ההתאמה ואת הנתונים/ }).check()
+  await page.getByRole('button', { name: 'ייבוא הנתונים', exact: true }).click()
+  await expect(
+    page.getByText('נשמרו 0 לקוחות, 0 פוליסות ו־0 משימות.', { exact: true }),
+  ).toBeVisible()
+  await expect(page.getByText(/עודכנו 1 רשומות קיימות/)).toBeVisible()
+  await page.goto('/policies')
+  await page.getByLabel('חיפוש פוליסות', { exact: true }).fill('77-888-99')
+  await expect(page.getByRole('button', { name: 'רכב 77-888-99', exact: true })).toHaveCount(1)
+  await page.getByRole('button', { name: 'רכב 77-888-99', exact: true }).click()
+  await expect(page.getByRole('dialog').getByLabel('עמלה', { exact: true })).toHaveValue('15%')
+  await expect(page.getByRole('dialog').getByLabel('חובה', { exact: true })).toHaveValue('1200')
 })

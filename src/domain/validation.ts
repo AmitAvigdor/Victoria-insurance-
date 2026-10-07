@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { insuranceTypes, policyStatuses, priorities, taskStatuses } from './types'
+import { insuranceTypes, policyStatuses, priorities, taskStatuses, renewalStages } from './types'
 const text = (max: number) => z.string().trim().max(max, `עד ${max} תווים`)
 const required = (max: number) => text(max).min(1, 'יש למלא את שדות החובה')
 const date = z
@@ -28,9 +28,20 @@ export const customerSchema = z.object({
   address: text(300),
   notes: text(5000),
 })
+export const renewalSchema = z.object({
+  stage: z.enum(renewalStages),
+  follow_up: date.nullable(),
+  note: text(5000),
+})
 export const policySchema = z
   .object({
     customer_id: z.uuid('יש לבחור לקוח'),
+    renewal_stage: z.enum(renewalStages).optional(),
+    renewal_follow_up: date.nullable().optional(),
+    renewal_notes: text(5000).optional(),
+    commission_expected_amount: z.number().finite().min(0).max(999999999).nullable().optional(),
+    commission_received_amount: z.number().finite().min(0).max(999999999).optional(),
+    commission_due_date: date.nullable().optional(),
     insurance_company: required(100),
     policy_number: text(100),
     vehicle_registration: text(50).optional(),

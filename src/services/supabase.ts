@@ -1,9 +1,17 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Customer, DocumentRecord, Identity, Policy, Snapshot, Task } from '@/domain/types'
-import { customerSchema, policySchema, taskSchema, validateFile } from '@/domain/validation'
+import {
+  customerSchema,
+  policySchema,
+  taskSchema,
+  validateFile,
+  renewalSchema,
+} from '@/domain/validation'
 import type { Repository } from './repository'
 function fail(error: { message: string; code?: string } | null) {
   if (!error) return
+  if (error.code === 'PT409')
+    throw new Error('הרשומה השתנתה. רעננו את הנתונים ובדקו שוב לפני השמירה')
   if (error.code === '23505')
     throw new Error('רשומה עם אותו מספר זהות, מספר פוליסה או שורת ייבוא כבר קיימת')
   if (error.code === '42501') throw new Error('אין הרשאה לפעולה זו. בדקו את שיוך המשתמש לסוכנות')
@@ -40,6 +48,31 @@ export function supabaseRepository(client: SupabaseClient, identity: Identity): 
     return data as T
   }
   return {
+    async saveRenewal(policy, input) {
+      const parsed = renewalSchema.parse(input)
+      const { error } = await client
+        .rpc('save_renewal', {
+          policy_id: policy.id,
+          expected_updated_at: policy.updated_at,
+          stage: parsed.stage,
+          follow_up: parsed.follow_up,
+          note: parsed.note,
+        })
+        .abortSignal(AbortSignal.timeout(20000))
+      fail(error)
+    },
+    async addContactNote(customerId, note) {
+      const { error } = await client
+        .rpc('add_contact_note', { customer_id: customerId, note })
+        .abortSignal(AbortSignal.timeout(20000))
+      fail(error)
+    },
+    async applyImportUpdates(updates) {
+      const { error } = await client
+        .rpc('apply_import_updates', { updates })
+        .abortSignal(AbortSignal.timeout(20000))
+      fail(error)
+    },
     async load(): Promise<Snapshot> {
       const [customers, policies, tasks, documents, activities] = await Promise.all([
         all<Customer>(client, 'customers', 'created_at'),

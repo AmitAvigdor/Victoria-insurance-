@@ -2,7 +2,9 @@ import { daysUntil, today } from './dates'
 import type { Policy, Snapshot, Task } from './types'
 export const isActive = (p: Policy) =>
   p.status !== 'בוטלה' && p.status !== 'הסתיימה' && p.start_date <= today() && p.end_date >= today()
-export const isRenewable = (p: Policy) => p.status !== 'בוטלה'
+export const renewalOpen = (p: Policy) =>
+  p.status !== 'בוטלה' && p.renewal_stage !== 'חודש' && p.renewal_stage !== 'לא חודש'
+export const isRenewable = renewalOpen
 export const isOverdue = (t: Task) => t.status !== 'הושלמה' && t.due_date < today()
 export const renewals = (policies: Policy[], window: number | 'expired') =>
   policies

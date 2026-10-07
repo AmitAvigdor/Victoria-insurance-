@@ -1,4 +1,6 @@
 import type {
+  RenewalInput,
+  ReviewedUpdate,
   Customer,
   CustomerInput,
   DocumentRecord,
@@ -10,6 +12,9 @@ import type {
 } from '@/domain/types'
 export interface Repository {
   load(): Promise<Snapshot>
+  saveRenewal(policy: Policy, input: RenewalInput): Promise<void>
+  addContactNote(customerId: string, note: string): Promise<void>
+  applyImportUpdates(updates: ReviewedUpdate[]): Promise<void>
   saveCustomer(input: CustomerInput, id?: string): Promise<Customer>
   archiveCustomer(id: string, archived: boolean): Promise<void>
   savePolicy(input: PolicyInput, id?: string): Promise<Policy>

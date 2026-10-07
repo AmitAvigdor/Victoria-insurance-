@@ -57,6 +57,9 @@ export function Dashboard() {
           <p>הלקוחות, החידושים והמשימות שחשוב להכיר היום.</p>
         </div>
         <div className="actions">
+          <Button asChild>
+            <Link to="/today">מה דורש טיפול היום</Link>
+          </Button>
           <Button variant="outline" onClick={() => edit({ kind: 'task' })}>
             <Plus size={16} />
             משימה חדשה

@@ -12,3 +12,7 @@ test-results/
 supabase/.temp/
 __pycache__/
 *.pyc
+
+.private/
+*.vbackup
+*.vbackup.verified.json

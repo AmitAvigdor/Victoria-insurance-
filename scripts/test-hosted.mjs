@@ -25,7 +25,13 @@ const adminKey =
   keys.find((k) => k.type === 'secret')?.api_key ||
   keys.find((k) => k.name === 'service_role')?.api_key
 assert.ok(adminKey, 'Administrator access is required for temporary fixtures')
-const options = { auth: { persistSession: false, autoRefreshToken: false } }
+const options = {
+  auth: { persistSession: false, autoRefreshToken: false },
+  global: {
+    fetch: (input, init) =>
+      fetch(input, { ...init, signal: init?.signal || AbortSignal.timeout(30000) }),
+  },
+}
 const admin = createClient(url, adminKey, options)
 const client = () => createClient(url, publicKey, options)
 const agencies = [randomUUID(), randomUUID()]
@@ -146,6 +152,94 @@ try {
     premium: 100,
   }
   const policy = ok(await a.from('policies').insert(policyInput).select().single())
+
+  await check(
+    'renewal and contact-note RPCs are audited, conflict-aware and agency scoped',
+    async () => {
+      ok(
+        await a.rpc('save_renewal', {
+          policy_id: policy.id,
+          expected_updated_at: policy.updated_at,
+          stage: 'יצרתי קשר',
+          follow_up: now,
+          note: 'Fictional workflow note',
+        }),
+      )
+      assert.equal(
+        (
+          await a.rpc('save_renewal', {
+            policy_id: policy.id,
+            expected_updated_at: policy.updated_at,
+            stage: 'חודש',
+            follow_up: null,
+            note: 'stale',
+          })
+        ).error?.code,
+        'PT409',
+      )
+      ok(await a.rpc('add_contact_note', { customer_id: ca.id, note: 'Fictional contact note' }))
+      assert.ok((await b.rpc('add_contact_note', { customer_id: ca.id, note: 'forbidden' })).error)
+      assert.ok(
+        (
+          await b.rpc('save_renewal', {
+            policy_id: policy.id,
+            expected_updated_at: policy.updated_at,
+            stage: 'חודש',
+            follow_up: null,
+            note: '',
+          })
+        ).error,
+      )
+      const events = ok(
+        await a.from('activities').select('action_type,user_id').eq('customer_id', ca.id),
+      )
+      assert.ok(
+        events.some((e) => e.action_type === 'renewal.updated' && e.user_id === users[0].id),
+      )
+      assert.ok(events.some((e) => e.action_type === 'contact.note' && e.user_id === users[0].id))
+    },
+  )
+  await check(
+    'reviewed imports and commission updates preserve unselected fields and reject stale writes',
+    async () => {
+      const current = ok(await a.from('policies').select('*').eq('id', policy.id).single())
+      const change = {
+        table: 'policies',
+        id: policy.id,
+        updated_at: current.updated_at,
+        patch: {
+          commission_expected_amount: 150.25,
+          commission_received_amount: 50,
+          commission_due_date: now,
+        },
+      }
+      ok(await a.rpc('apply_import_updates', { updates: [change] }))
+      const updated = ok(await a.from('policies').select('*').eq('id', policy.id).single())
+      assert.equal(Number(updated.commission_expected_amount), 150.25)
+      assert.equal(updated.premium, current.premium)
+      assert.equal(updated.renewal_stage, 'יצרתי קשר')
+      assert.equal(
+        (await a.rpc('apply_import_updates', { updates: [change] })).error?.code,
+        'PT409',
+      )
+      assert.ok(
+        (
+          await b.rpc('apply_import_updates', {
+            updates: [{ ...change, updated_at: updated.updated_at }],
+          })
+        ).error,
+      )
+      assert.ok(
+        (
+          await a.rpc('apply_import_updates', {
+            updates: [
+              { ...change, updated_at: updated.updated_at, patch: { agency_id: agencies[1] } },
+            ],
+          })
+        ).error,
+      )
+    },
+  )
   await check(
     'vehicle imports preserve missing identifiers and raw values with duplicate protection',
     async () => {

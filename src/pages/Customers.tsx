@@ -8,8 +8,11 @@ import { CustomerLink, Empty, Heading, Paginated } from '@/components/shared'
 import { fullName, type Customer } from '@/domain/types'
 export function matchesCustomer(c: Customer, query: string) {
   const q = query.trim().toLocaleLowerCase()
+  const digits = q.replace(/\D/g, '')
   return [fullName(c), c.phone, c.email, c.identification_number, c.phone.replace(/\D/g, '')].some(
-    (v) => v.toLocaleLowerCase().includes(q),
+    (v) =>
+      v.toLocaleLowerCase().includes(q) ||
+      (digits.length >= 3 && v.replace(/\D/g, '').includes(digits)),
   )
 }
 export function Customers() {

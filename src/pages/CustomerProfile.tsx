@@ -4,6 +4,7 @@ import { useData } from '@/app/data'
 import { useEditors } from '@/components/editors'
 import { Button } from '@/components/ui/button'
 import { Badge, Empty, Paginated } from '@/components/shared'
+import { ContactActions, ContactNote } from '@/components/workflows'
 import { PoliciesTable, TasksList, DocumentsTable } from '@/components/records'
 import { fullName } from '@/domain/types'
 import { formatDate } from '@/domain/dates'
@@ -83,6 +84,8 @@ export function CustomerProfile() {
           </div>
         </div>
         <div className="actions">
+          <ContactActions customer={customer} />
+          <ContactNote customer={customer} />
           <Button variant="outline" onClick={() => edit({ kind: 'customer', record: customer })}>
             <Pencil size={15} />
             עריכת פרטים

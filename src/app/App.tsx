@@ -17,6 +17,8 @@ import { Renewals } from '@/pages/Renewals'
 import { Tasks } from '@/pages/Tasks'
 import { Documents } from '@/pages/Documents'
 import { SearchPage } from '@/pages/Search'
+import { Today } from '@/pages/Today'
+import { Commissions } from '@/pages/Commissions'
 import { Security } from '@/pages/Security'
 import { errorMessage } from '@/lib/utils'
 const ImportPage = lazy(() => import('@/pages/Import'))
@@ -82,6 +84,8 @@ export default function App() {
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route element={<Protected />}>
               <Route index element={<Dashboard />} />
+              <Route path="today" element={<Today />} />
+              <Route path="commissions" element={<Commissions />} />
               <Route path="customers" element={<Customers />} />
               <Route
                 path="import"

@@ -2,6 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import {
+  CalendarCheck,
+  Wallet,
   LayoutDashboard,
   Users,
   ShieldCheck,
@@ -26,6 +28,9 @@ import { Button } from './ui/button'
 import { DataBoundary } from './shared'
 const nav = [
   { path: '/', label: 'דשבורד', icon: LayoutDashboard },
+  { path: '/search', label: 'חיפוש', icon: Search },
+  { path: '/today', label: 'טיפול היום', icon: CalendarCheck },
+  { path: '/commissions', label: 'עמלות', icon: Wallet },
   { path: '/customers', label: 'לקוחות', icon: Users },
   { path: '/policies', label: 'פוליסות', icon: ShieldCheck },
   { path: '/renewals', label: 'חידושים', icon: RefreshCw },
@@ -55,7 +60,7 @@ export function Layout() {
   const count = data ? renewals(data.policies, 30).length : 0
   function runSearch(e: FormEvent) {
     e.preventDefault()
-    navigate(`/search?q=${encodeURIComponent(search.trim())}`)
+    navigate('/search', { state: { query: search.trim() } })
   }
   return (
     <div className="app-shell">

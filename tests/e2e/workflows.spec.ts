@@ -48,7 +48,7 @@ test('customer → policy → renewal → task → document → persistence → 
   await page.goto('/renewals')
   await page.getByRole('button', { name: '7 ימים', exact: true }).click()
   await page.getByLabel('חיפוש חידושים', { exact: true }).fill('E2E-FICTIONAL-1')
-  await expect(page.getByRole('button', { name: 'E2E-FICTIONAL-1', exact: true })).toBeVisible()
+  await expect(page.getByText('חברת דוגמה · רכב · E2E-FICTIONAL-1', { exact: true })).toBeVisible()
   await page.getByRole('link', { name: 'בדיקה אוטומטית', exact: true }).click()
   await page.getByRole('button', { name: 'משימה חדשה', exact: true }).click()
   await page.getByLabel('כותרת המשימה *', { exact: true }).fill('משימת בדיקה אוטומטית')
@@ -119,7 +119,16 @@ test('switching agencies never shows the previous customer cache', async ({ page
 })
 test('responsive viewport stays within document bounds', async ({ page }) => {
   await login(page)
-  for (const route of ['/', '/customers', '/policies', '/renewals', '/tasks', '/documents']) {
+  for (const route of [
+    '/',
+    '/today',
+    '/customers',
+    '/policies',
+    '/renewals',
+    '/tasks',
+    '/documents',
+    '/commissions',
+  ]) {
     await page.goto(route)
     await expect(page.locator('.page-heading')).toBeVisible()
     const width = await page.evaluate(() => document.documentElement.scrollWidth)

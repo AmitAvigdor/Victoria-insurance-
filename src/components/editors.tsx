@@ -499,7 +499,8 @@ function EditorDialog({ editor, close }: { editor: Editor; close: () => void }) 
             )}
             {editor.kind === 'delete-document' && (
               <p className="field wide">
-                למחוק את ״{editor.record.file_name}״? המסמך יועבר לסל המחזור וניתן יהיה לשחזר אותו במסך אבטחה והרשאות.
+                למחוק את ״{editor.record.file_name}״? המסמך יועבר לסל המחזור וניתן יהיה לשחזר אותו
+                במסך אבטחה והרשאות.
               </p>
             )}
           </div>

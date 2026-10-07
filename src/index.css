@@ -1516,3 +1516,68 @@ th {
     margin-inline-start: auto;
   }
 }
+
+/* Daily work and mobile renewal cards */
+.workflow-section {
+  margin-top: 22px;
+}
+.workflow-filter {
+  max-width: 320px;
+  margin-bottom: 20px;
+}
+.renewal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 20px;
+}
+.renewal-card {
+  border: 1px solid #e3e7df;
+  border-radius: 14px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.renewal-card p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.renewal-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.workflow-note {
+  white-space: pre-wrap;
+}
+.contact-actions {
+  flex-wrap: wrap;
+}
+.renewal-card .actions {
+  flex-wrap: wrap;
+}
+.commission-stats {
+  display: flex;
+  gap: 28px;
+  flex-wrap: wrap;
+  padding: 20px;
+}
+.commission-stats strong {
+  display: block;
+  font-size: 26px;
+}
+@media (max-width: 700px) {
+  .renewal-grid {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px;
+  }
+  .profile-card .actions {
+    flex-wrap: wrap;
+  }
+  .contact-actions a {
+    min-height: 44px;
+  }
+}

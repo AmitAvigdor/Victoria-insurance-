@@ -4,6 +4,7 @@ import {
   policyStatuses,
   taskStatuses,
   priorities,
+  type ReviewedUpdate,
   type CustomerInput,
   type PolicyInput,
   type Snapshot,
@@ -108,12 +109,30 @@ export interface ImportOptions {
   mapping: Mapping
   keepExtra: boolean
   vehicleLinks?: Record<number, string>
+  updateExisting?: boolean
+  selectedChanges?: Record<string, boolean>
+  vehiclePolicyLinks?: Record<number, string>
+}
+export interface ImportChange {
+  key: string
+  table: 'customers' | 'policies'
+  id: string
+  field: string
+  before: unknown
+  after: unknown
+  updated_at: string
+  selected: boolean
 }
 export interface ImportRow {
+  changes?: ImportChange[]
+  updates?: ReviewedUpdate[]
+  policyCandidates?: { id: string; label: string }[]
   rowNumber: number
   identification: string
   name: string
   customer?: CustomerInput
+  suggestedCustomerIds?: string[]
+  existingPolicyId?: string
   customerId?: string
   customerKey?: string
   policy?: Omit<PolicyInput, 'customer_id'>
@@ -150,7 +169,7 @@ export function importPremium(cell: ImportCell): number {
   return Number(text.replaceAll(',', ''))
 }
 
-export function prepareImport(options: ImportOptions, snapshot: Snapshot): ImportPlan {
+function prepareBaseImport(options: ImportOptions, snapshot: Snapshot): ImportPlan {
   if (options.mode === 'vehicles') return prepareVehicleImport(options, snapshot)
   const { sheet, headerRow, mapping, mode, keepExtra } = options
   const errors: string[] = []
@@ -380,6 +399,9 @@ function prepareVehicleImport(options: ImportOptions, snapshot: Snapshot): Impor
       name,
       identification: '',
       customerKey: `import:${sourceKey}`,
+      suggestedCustomerIds: snapshot.customers
+        .filter((c) => !c.archived_at && normalized(fullName(c)) === normalized(name))
+        .map((c) => c.id),
       errors: [],
       warnings: [],
       action: 'ready',
@@ -425,6 +447,7 @@ function prepareVehicleImport(options: ImportOptions, snapshot: Snapshot): Impor
     }
 
     const previousPolicy = existingPolicies.get(sourceKey)
+    row.existingPolicyId = previousPolicy?.id
     const partialCustomer = importedCustomers.get(sourceKey)
     const choice = vehicleLinks[rowNumber] || ''
     let existing = previousPolicy ? customersById.get(previousPolicy.customer_id) : partialCustomer
@@ -492,4 +515,183 @@ function prepareVehicleImport(options: ImportOptions, snapshot: Snapshot): Impor
   })
   if (!rows.length) errors.push('לא נמצאו שורות נתונים אחרי שורת הכותרות')
   return { rows, errors }
+}
+
+// Existing records are matched by identity, never merged by a shared name.
+export function prepareImport(options: ImportOptions, snapshot: Snapshot): ImportPlan {
+  const plan = prepareBaseImport(options, snapshot)
+  if (!options.updateExisting || plan.errors.length) return plan
+  const { mapping, selectedChanges = {}, vehiclePolicyLinks = {} } = options
+  const reserved = new Map<string, number>()
+  for (const row of plan.rows) {
+    if (row.errors.length) continue
+    const cells = options.sheet.rows[row.rowNumber - 1]
+    const get = (key: string) => cells[mapping[key]] || blank
+    const value = (key: string) => asText(get(key))
+    const selectedColumns = Object.values(mapping)
+    const extraNotes = options.keepExtra
+      ? cells
+          .flatMap((cell, i) =>
+            !selectedColumns.includes(i) && cell.text.trim()
+              ? [`${headersFor(options.sheet, options.headerRow)[i]}: ${cell.text.trim()}`]
+              : [],
+          )
+          .join('\n')
+      : ''
+    const changes: ImportChange[] = []
+    function propose(
+      table: 'customers' | 'policies',
+      existing: Snapshot['customers'][number] | Snapshot['policies'][number],
+      patch: Record<string, unknown>,
+    ) {
+      const parsed =
+        table === 'customers'
+          ? customerSchema.safeParse({ ...existing, ...patch })
+          : policySchema.safeParse({ ...existing, ...patch })
+      if (!parsed.success) {
+        row.errors.push(
+          'נתוני העדכון אינם תקינים: ' + parsed.error.issues.map((i) => i.message).join('; '),
+        )
+        return
+      }
+      for (const [field, after] of Object.entries(patch)) {
+        const before = (existing as unknown as Record<string, unknown>)[field] ?? null
+        if (String(before ?? '') === String(after ?? '')) continue
+        const key = `${row.rowNumber}:${table}:${field}`
+        const selected = !!selectedChanges[key]
+        if (
+          selected &&
+          reserved.has(`${table}:${existing.id}`) &&
+          reserved.get(`${table}:${existing.id}`) !== row.rowNumber
+        ) {
+          row.errors.push('אותה רשומה נבחרה לעדכון בשורה קודמת; בחרו שורה אחת לעדכון הרשומה')
+          continue
+        }
+        if (selected) reserved.set(`${table}:${existing.id}`, row.rowNumber)
+        changes.push({
+          key,
+          table,
+          id: existing.id,
+          field,
+          before,
+          after,
+          updated_at: existing.updated_at,
+          selected,
+        })
+      }
+    }
+    const existingCustomer = snapshot.customers.find(
+      (c) =>
+        c.id === row.customerId ||
+        (!!row.identification && c.identification_number === row.identification),
+    )
+    if (existingCustomer && (options.mode === 'customers' || options.mode === 'combined')) {
+      const patch: Record<string, unknown> = {}
+      const parts = value('full_name').split(/\s+/)
+      if (mapping.first_name != null || mapping.full_name != null)
+        patch.first_name = value('first_name') || parts[0]
+      if (mapping.last_name != null || mapping.full_name != null)
+        patch.last_name = value('last_name') || parts.slice(1).join(' ')
+      for (const key of ['phone', 'email', 'address', 'notes'])
+        if (mapping[key] != null) patch[key] = value(key)
+      if (mapping.notes != null || extraNotes)
+        patch.notes = [value('notes'), extraNotes].filter(Boolean).join('\n')
+      if (typeof patch.phone === 'string' && /^[1-9]\d{7,8}$/.test(patch.phone))
+        patch.phone = '0' + patch.phone
+      if (typeof patch.email === 'string') patch.email = patch.email.toLowerCase()
+      if (mapping.date_of_birth != null)
+        patch.date_of_birth = value('date_of_birth') ? importDate(get('date_of_birth')) : null
+      propose('customers', existingCustomer, patch)
+    }
+    let existingPolicy = snapshot.policies.find((p) =>
+      options.mode === 'vehicles'
+        ? p.id === row.existingPolicyId
+        : !!value('policy_number') &&
+          policyKey(p) ===
+            policyKey({
+              policy_number: value('policy_number'),
+              insurance_company: value('insurance_company'),
+            }),
+    )
+    if (options.mode === 'vehicles') {
+      // Previously imported rows may have no proposed policy because the base plan skipped them.
+      const candidates = snapshot.policies.filter(
+        (p) =>
+          p.insurance_type === 'רכב' &&
+          p.vehicle_registration?.replace(/[\s-]/g, '') ===
+            value('vehicle_registration').replace(/[\s-]/g, '') &&
+          p.insurance_company === value('insurance_company') &&
+          p.start_date === importDate(get('start_date')),
+      )
+      row.policyCandidates = candidates.map((p) => ({
+        id: p.id,
+        label: `${fullName(snapshot.customers.find((c) => c.id === p.customer_id))} · ${p.vehicle_registration} · ${p.end_date}`,
+      }))
+      const selectedId = vehiclePolicyLinks[row.rowNumber]
+      if (selectedId) {
+        const chosen = candidates.find((p) => p.id === selectedId)
+        if (
+          !chosen ||
+          (existingPolicy && existingPolicy.id !== chosen.id) ||
+          (row.customerId && row.customerId !== chosen.customer_id)
+        )
+          row.errors.push('שיוך הפוליסה אינו תואם לרכב, לחברה, לתאריך ההתחלה או למבוטח שנבחר')
+        else {
+          existingPolicy = chosen
+          row.customerId = chosen.customer_id
+          row.customerKey = `record:${chosen.customer_id}`
+          row.customer = undefined
+          row.policy = undefined
+        }
+      }
+    }
+    if (
+      existingPolicy &&
+      (options.mode === 'policies' || options.mode === 'combined' || options.mode === 'vehicles')
+    ) {
+      if (
+        options.mode !== 'vehicles' &&
+        snapshot.customers.find((c) => c.id === existingPolicy.customer_id)
+          ?.identification_number !== row.identification
+      )
+        row.errors.push('אין לעדכן פוליסה של לקוח אחר')
+      else {
+        const patch: Record<string, unknown> = {}
+        for (const key of ['compulsory_value', 'comprehensive_value', 'commission'])
+          if (mapping[key] != null) patch[key] = value(key)
+        for (const key of ['start_date', 'end_date'])
+          if (mapping[key] != null) patch[key] = importDate(get(key))
+        if (mapping.premium != null)
+          patch.premium = value('premium') ? importPremium(get('premium')) : null
+        if (mapping.policy_status != null) patch.status = value('policy_status')
+        if (mapping.policy_notes != null || (options.mode !== 'combined' && extraNotes))
+          patch.notes = [value('policy_notes'), options.mode !== 'combined' ? extraNotes : '']
+            .filter(Boolean)
+            .join('\n')
+        propose('policies', existingPolicy, patch)
+      }
+    }
+    row.changes = changes
+    row.updates = []
+    for (const c of changes.filter((c) => c.selected)) {
+      let update = row.updates.find((u) => u.id === c.id && u.table === c.table)
+      if (!update) {
+        update = { table: c.table, id: c.id, updated_at: c.updated_at, patch: {} }
+        row.updates.push(update)
+      }
+      update.patch[c.field] = c.after
+    }
+    row.action = row.errors.length
+      ? 'error'
+      : row.customer || row.policy || row.task || row.updates.length
+        ? 'ready'
+        : 'skip'
+    if (changes.length) {
+      row.warnings = row.warnings.filter((warning) => !/לא יישמרו|לא יעודכנו/.test(warning))
+      row.warnings.push(
+        'רק השדות שסומנו ברשימת השינויים יעודכנו. ערך ריק שסומן מוחק את הערך הקודם.',
+      )
+    }
+  }
+  return plan
 }

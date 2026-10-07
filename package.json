@@ -16,7 +16,10 @@
     "test:recovery": "node scripts/test-recovery.mjs",
     "test:e2e": "playwright test",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "backup": "node scripts/backup.mjs create",
+    "backup:verify": "node scripts/backup.mjs verify",
+    "test:workflows": "node scripts/test-workflows.mjs && node --test scripts/test-backup.mjs"
   },
   "dependencies": {
     "@fontsource/heebo": "^5.2.6",

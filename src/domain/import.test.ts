@@ -573,3 +573,151 @@ describe('vehicle workbook without identity, phone or policy number', () => {
     expect(row.customer?.last_name).toBe('')
   })
 })
+
+describe('Reviewed updates of existing records', () => {
+  it('shows before/after but changes nothing until a field is selected', () => {
+    const snapshot = empty()
+    snapshot.customers.push(record())
+    const config = { ...options([customerHeaders, customer]), updateExisting: true }
+    const preview = prepareImport(config, snapshot)
+    expect(preview.rows[0].action).toBe('skip')
+    const change = preview.rows[0].changes!.find((c) => c.field === 'email')!
+    expect(change.before).toBe('')
+    expect(change.after).toBe('test@example.invalid')
+    const chosen = prepareImport({ ...config, selectedChanges: { [change.key]: true } }, snapshot)
+    expect(chosen.rows[0].updates![0].patch).toEqual({ email: 'test@example.invalid' })
+    expect(chosen.rows[0].action).toBe('ready')
+  })
+  it('explicitly selecting an empty value is required to clear it', () => {
+    const snapshot = empty()
+    snapshot.customers.push({ ...record(), email: 'old@example.invalid' })
+    const row = [...customer]
+    row[4] = ''
+    const config = { ...options([customerHeaders, row]), updateExisting: true }
+    const change = prepareImport(config, snapshot).rows[0].changes!.find(
+      (c) => c.field === 'email',
+    )!
+    expect(change.after).toBe('')
+    expect(prepareImport(config, snapshot).rows[0].updates).toEqual([])
+    expect(
+      prepareImport({ ...config, selectedChanges: { [change.key]: true } }, snapshot).rows[0]
+        .updates![0].patch,
+    ).toEqual({ email: '' })
+  })
+  it('rejects selecting two conflicting updates to the same record field', () => {
+    const snapshot = empty()
+    snapshot.customers.push(record())
+    const config = {
+      ...options([customerHeaders, customer, customer]),
+      updateExisting: true,
+      selectedChanges: { '2:customers:email': true, '3:customers:email': true },
+    }
+    const plan = prepareImport(config, snapshot)
+    expect(plan.rows[0].action).toBe('ready')
+    expect(plan.rows[1].action).toBe('error')
+  })
+  it('detects stale review timestamps before any update is sent', async () => {
+    const snapshot = empty()
+    snapshot.customers.push(record())
+    const config = {
+      ...options([customerHeaders, customer]),
+      updateExisting: true,
+      selectedChanges: { '2:customers:email': true },
+    }
+    const plan = prepareImport(config, snapshot)
+    snapshot.customers[0].updated_at = '2026-10-07T00:00:00Z'
+    const { repository } = memoryRepository(snapshot)
+    await expect(
+      executeImport(
+        repository,
+        config,
+        plan,
+        () => {},
+        () => false,
+      ),
+    ).rejects.toThrow('הנתונים במערכת השתנו')
+  })
+})
+
+describe('Vehicle update matching', () => {
+  const headers = [
+    'שם המבוטח',
+    'חברת הביטוח',
+    'תחילת הביטוח',
+    'סיום הביטוח',
+    'חובה',
+    'מקיף',
+    'מספר רישוי',
+    'עמלה',
+    'הערות',
+  ]
+  const source = [
+    'דוגמה רכב',
+    'מבטח',
+    '01/01/2026',
+    '31/12/2026',
+    '1200',
+    'יש כיסוי',
+    '12-345-67',
+    '12%',
+    'הערה',
+  ]
+  function existing() {
+    const plan = prepareImport(options([headers, source], 'vehicles'), empty())
+    const snapshot = empty()
+    snapshot.customers.push({ ...record(), ...plan.rows[0].customer! })
+    snapshot.policies.push({
+      ...plan.rows[0].policy!,
+      id: '22222222-2222-4222-8222-222222222222',
+      agency_id: 'agency',
+      customer_id: record().id,
+      created_at: '',
+      updated_at: '2026-10-07T00:00:00Z',
+    })
+    return snapshot
+  }
+  it('exact imported rows can update selected raw commission without duplication', () => {
+    const snapshot = existing()
+    const changed = [...source]
+    changed[7] = '15%'
+    const config = {
+      ...options([headers, changed], 'vehicles'),
+      updateExisting: true,
+      selectedChanges: { '2:policies:commission': true },
+    }
+    const row = prepareImport(config, snapshot).rows[0]
+    expect(row.action).toBe('ready')
+    expect(row.customer).toBeUndefined()
+    expect(row.policy).toBeUndefined()
+    expect(row.updates![0].patch).toEqual({ commission: '15%' })
+  })
+  it('changed end date needs explicit linking, and new start dates cannot overwrite an old period', () => {
+    const snapshot = existing()
+    const changed = [...source]
+    changed[3] = '30/12/2026'
+    const config = { ...options([headers, changed], 'vehicles'), updateExisting: true }
+    expect(prepareImport(config, snapshot).rows[0].policy).toBeDefined()
+    const linked = prepareImport(
+      {
+        ...config,
+        vehiclePolicyLinks: { 2: snapshot.policies[0].id },
+        selectedChanges: { '2:policies:end_date': true },
+      },
+      snapshot,
+    ).rows[0]
+    expect(linked.policy).toBeUndefined()
+    expect(linked.customer).toBeUndefined()
+    expect(linked.updates![0].patch).toEqual({ end_date: '2026-12-30' })
+    changed[2] = '01/01/2027'
+    changed[3] = '31/12/2027'
+    const invalid = prepareImport(
+      {
+        ...options([headers, changed], 'vehicles'),
+        updateExisting: true,
+        vehiclePolicyLinks: { 2: snapshot.policies[0].id },
+      },
+      snapshot,
+    ).rows[0]
+    expect(invalid.action).toBe('error')
+  })
+})
