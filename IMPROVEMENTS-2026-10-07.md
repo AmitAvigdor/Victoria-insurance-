@@ -35,7 +35,17 @@ npm run backup:verify -- '/absolute/path/to/archive.vbackup'
 
 This is a manual local backup. No scheduled/off-device backup service was enabled. The rehearsal restores into a local database and temporary files, not a hosted Supabase project. A hosted disaster recovery also requires provisioning Auth users, configuring the provider and uploading the files into private Storage. No production restoration or deletion is performed by the rehearsal.
 
-## Validation
+## Excel export
+
+The protected `/export` screen downloads a real `.xlsx` workbook. Users select customers, policies/renewals, the original ten-column vehicle layout, tasks, commissions, document metadata and activity history. Archived customers and all linked records are excluded unless explicitly included. Empty sheets retain headers; exports cover all loaded rows, not just the visible table page.
+
+Preparation reloads records using the signed-in user's repository and existing server RLS. An additional agency/customer/policy filter prevents cross-agency joins. No administrator credentials, private storage paths, uploader identifiers, document bytes or signed document links are exported. The workbook is built in browser memory and downloaded after an explicit click, including on mobile. Blob URLs are revoked when selections change or the screen unmounts. No new server endpoint, database migration or persistent browser data store was added.
+
+Strings remain explicit text cells, including leading-zero identifiers and values beginning with formula characters. There are no exported formulas or external hyperlinks. Calendar dates use numeric Excel serials with `dd/mm/yyyy` formatting; money stays numeric, blank and zero remain distinct, and original ambiguous commission/coverage strings are preserved. The workbook uses right-to-left views, column widths and filters. The screen explains that the spreadsheet contains unencrypted personal data and does not replace the encrypted business backup.
+
+Local verification: 54 unit tests including nine export integrity/confidentiality cases; four desktop/mobile Chrome browser scenarios covering downloaded workbook contents, selections, leading zeroes, Blob revocation, protected logout, responsive layout and fresh records added from a second tab. Production build, TypeScript, lint and formatting pass. Browser checks use an iPhone-sized Chrome viewport, not physical iPhone Safari.
+
+## Workflow release validation
 
 Typecheck, lint, unit tests, existing isolation/hardening checks, new workflow SQL checks, encrypted-backup tampering/restore checks and desktop/mobile browser workflows are run before release. Production migration, final encrypted backup and isolated hosted/browser verification are recorded after publication.
 

@@ -795,6 +795,16 @@ tbody tr:hover {
 .import-panel {
   padding: clamp(16px, 3vw, 28px);
 }
+.export-sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 16px;
+  margin-block: 20px;
+}
+.export-archive {
+  padding-block: 16px;
+  border-top: 1px solid var(--line);
+}
 .import-panel h2 {
   display: flex;
   align-items: center;

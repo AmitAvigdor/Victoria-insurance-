@@ -11,6 +11,7 @@ import {
   CheckSquare,
   Files,
   FileSpreadsheet,
+  Download,
   Building2,
   Search,
   ChevronLeft,
@@ -37,6 +38,7 @@ const nav = [
   { path: '/tasks', label: 'משימות', icon: CheckSquare },
   { path: '/documents', label: 'מסמכים', icon: Files },
   { path: '/import', label: 'ייבוא מאקסל', icon: FileSpreadsheet },
+  { path: '/export', label: 'ייצוא לאקסל', icon: Download },
   { path: '/security', label: 'אבטחה והרשאות', icon: ShieldCheck },
 ]
 export function Layout() {

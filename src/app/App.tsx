@@ -22,6 +22,7 @@ import { Commissions } from '@/pages/Commissions'
 import { Security } from '@/pages/Security'
 import { errorMessage } from '@/lib/utils'
 const ImportPage = lazy(() => import('@/pages/Import'))
+const ExportPage = lazy(() => import('@/pages/Export'))
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: true } },
 })
@@ -87,6 +88,14 @@ export default function App() {
               <Route path="today" element={<Today />} />
               <Route path="commissions" element={<Commissions />} />
               <Route path="customers" element={<Customers />} />
+              <Route
+                path="export"
+                element={
+                  <Suspense fallback={<p role="status">טוען את מסך הייצוא…</p>}>
+                    <ExportPage />
+                  </Suspense>
+                }
+              />
               <Route
                 path="import"
                 element={
