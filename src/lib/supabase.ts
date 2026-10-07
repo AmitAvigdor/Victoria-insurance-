@@ -7,5 +7,9 @@ export const demoEnabled =
 export const supabase = isConfigured
   ? createClient(url!, key!, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+      global: {
+        fetch: (input, init) =>
+          fetch(input, { ...init, signal: init?.signal || AbortSignal.timeout(20000) }),
+      },
     })
   : null

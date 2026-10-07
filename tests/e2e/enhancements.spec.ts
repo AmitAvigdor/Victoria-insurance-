@@ -7,6 +7,11 @@ const day = (offset = 0) => {
 test('renewal follow up, daily work, call note, commission and private global search', async ({
   page,
 }, info) => {
+  page.on('requestfailed', (request) => {
+    const url = new URL(request.url())
+    if (url.hostname.endsWith('supabase.co'))
+      console.log('Network check:', url.pathname, request.failure()?.errorText)
+  })
   await page.goto('/login')
   if (process.env.E2E_LIVE === 'true') {
     await page.getByLabel('כתובת אימייל', { exact: true }).fill(process.env.E2E_EMAIL!)
