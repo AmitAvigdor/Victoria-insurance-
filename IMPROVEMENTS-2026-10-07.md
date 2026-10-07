@@ -40,3 +40,12 @@ This is a manual local backup. No scheduled/off-device backup service was enable
 Typecheck, lint, unit tests, existing isolation/hardening checks, new workflow SQL checks, encrypted-backup tampering/restore checks and desktop/mobile browser workflows are run before release. Production migration, final encrypted backup and isolated hosted/browser verification are recorded after publication.
 
 Optimistic conflicts use `PT409` (HTTP 409). The hosted integration check exposed the provider retrying `40001`, so a second migration replaces that error before release. See [Supabase’s explanation](https://supabase.com/docs/guides/troubleshooting/high-cpu-and-infinite-transaction-retries-when-using-custom-error-codes-in-rpc-functions-77326b). New workflow requests also have bounded client timeouts.
+
+Release evidence:
+
+- Production migrations `202610070001` and `202610070002` applied successfully.
+- 45 unit tests; 46 original PostgreSQL isolation checks; 20 hardening checks; eight document-handler checks; 11 new workflow SQL checks; three encrypted-backup checks.
+- The full demo browser run passed 14 desktop/mobile scenarios, with four hosted-only scenarios skipped; affected workflow/import cases passed again after the final changes.
+- The hosted API rerun passed 26 checks and removed all temporary data. The first deployed UI run exposed numeric-only matching of an alphanumeric policy query; this has a regression test and was corrected before final verification.
+- Two encrypted archives were created from real business records. Both decrypted and restored successfully into a disposable local PostgreSQL database and temporary document files; stored values and document hashes matched. Neither archive contains provider passwords or active Auth sessions, and no production records were restored/overwritten.
+- Dependency audit: zero reported vulnerabilities.

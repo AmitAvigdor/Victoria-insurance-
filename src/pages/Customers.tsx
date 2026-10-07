@@ -5,16 +5,9 @@ import { useData } from '@/app/data'
 import { useEditors } from '@/components/editors'
 import { Button } from '@/components/ui/button'
 import { CustomerLink, Empty, Heading, Paginated } from '@/components/shared'
-import { fullName, type Customer } from '@/domain/types'
-export function matchesCustomer(c: Customer, query: string) {
-  const q = query.trim().toLocaleLowerCase()
-  const digits = q.replace(/\D/g, '')
-  return [fullName(c), c.phone, c.email, c.identification_number, c.phone.replace(/\D/g, '')].some(
-    (v) =>
-      v.toLocaleLowerCase().includes(q) ||
-      (digits.length >= 3 && v.replace(/\D/g, '').includes(digits)),
-  )
-}
+import { fullName } from '@/domain/types'
+import { matchesCustomer } from '@/domain/search'
+export { matchesCustomer } from '@/domain/search'
 export function Customers() {
   const { data } = useData()
   const edit = useEditors()

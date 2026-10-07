@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises'
 import { randomBytes } from 'node:crypto'
 import { resolve, join } from 'node:path'
+import { homedir } from 'node:os'
 import { createClient } from '@supabase/supabase-js'
 import { encryptBackup, decryptBackup, digest } from './backup/archive.mjs'
 import { rehearseRestore } from './backup/rehearsal.mjs'
@@ -36,18 +37,46 @@ if (command === 'verify') {
   const ref = new URL(url).hostname.split('.')[0]
   const arguments_ = ['projects', 'api-keys', '--project-ref', ref, '--reveal', '--output', 'json']
   const executionOptions = { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
-  let output
-  try {
-    output = execFileSync(process.env.SUPABASE_CLI || 'supabase', arguments_, executionOptions)
-  } catch (error) {
-    if (error.code !== 'ENOENT' || process.env.SUPABASE_CLI)
-      throw new Error('Authenticated Supabase CLI access is required')
+  const commands = process.env.SUPABASE_CLI ? [[process.env.SUPABASE_CLI, []]] : [['supabase', []]]
+  if (!process.env.SUPABASE_CLI) {
+    const cache = join(homedir(), '.npm', '_npx')
+    const nativePackage = `cli-${process.platform}-${process.arch}`
     try {
-      output = execFileSync('npx', ['--no-install', 'supabase', ...arguments_], executionOptions)
+      for (const entry of await readdir(cache)) {
+        const executable = join(
+          cache,
+          entry,
+          'node_modules',
+          '@supabase',
+          nativePackage,
+          'bin',
+          process.platform === 'win32' ? 'supabase.exe' : 'supabase',
+        )
+        try {
+          await stat(executable)
+          commands.push([executable, []])
+        } catch {
+          /* Not a Supabase cache entry. */
+        }
+      }
     } catch {
-      throw new Error('Run npx supabase login before creating a backup')
+      /* A global CLI or npx may still be available. */
+    }
+    commands.push(['npx', ['--no-install', 'supabase']])
+  }
+  let output
+  for (const [command, prefix] of commands) {
+    try {
+      output = execFileSync(command, [...prefix, ...arguments_], executionOptions)
+      break
+    } catch {
+      /* Try an existing installation; never install or expose credentials here. */
     }
   }
+  if (!output)
+    throw new Error(
+      'Authenticated Supabase CLI access is required; use SUPABASE_CLI to select your installation',
+    )
   const keys = JSON.parse(output)
   const key =
     keys.find((k) => k.type === 'secret')?.api_key ||

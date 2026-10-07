@@ -42,7 +42,11 @@ test('renewal follow up, daily work, call note, commission and private global se
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await page.goto('/renewals')
   await page.getByLabel('חיפוש חידושים').fill('ENHANCEMENT-123')
-  await page.getByRole('button', { name: 'עדכון טיפול', exact: true }).click()
+  await page
+    .locator('article')
+    .filter({ hasText: 'ENHANCEMENT-123' })
+    .getByRole('button', { name: 'עדכון טיפול', exact: true })
+    .click()
   await page
     .getByRole('dialog')
     .getByLabel('שלב הטיפול', { exact: true })
@@ -72,7 +76,11 @@ test('renewal follow up, daily work, call note, commission and private global se
   expect(page.url()).not.toContain('0500001234')
   await page.goto('/renewals')
   await page.getByLabel('חיפוש חידושים').fill('ENHANCEMENT-123')
-  await page.getByRole('button', { name: 'עדכון טיפול', exact: true }).click()
+  await page
+    .locator('article')
+    .filter({ hasText: 'ENHANCEMENT-123' })
+    .getByRole('button', { name: 'עדכון טיפול', exact: true })
+    .click()
   await page.getByRole('dialog').getByLabel('שלב הטיפול', { exact: true }).selectOption('חודש')
   await page.getByRole('button', { name: 'שמירת הטיפול', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)

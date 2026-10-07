@@ -1,5 +1,7 @@
 # Victoria — personal-use security controls
 
+Update (7 October 2026): encrypted local business-data backups and a successful isolated restore rehearsal are now implemented. See [the improvement and recovery notes](IMPROVEMENTS-2026-10-07.md) for scope, recovery-key handling and remaining hosted/off-device limitations.
+
 6 October 2026. This supersedes the proposed remediation plan in `SECURITY-REVIEW-2026-10-06.md`. The owner explicitly declined mandatory MFA and clarified that this is a personal-use application. No external antivirus service or additional server is required or provisioned.
 
 ## Controls implemented

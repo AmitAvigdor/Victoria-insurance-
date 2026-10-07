@@ -6,30 +6,10 @@ import { useEditors } from '@/components/editors'
 import { Button } from '@/components/ui/button'
 import { Heading } from '@/components/shared'
 import { PoliciesTable } from '@/components/records'
-import {
-  insuranceTypes,
-  policyStatuses,
-  fullName,
-  type Policy,
-  type Snapshot,
-} from '@/domain/types'
+import { insuranceTypes, policyStatuses } from '@/domain/types'
 import { isActive } from '@/domain/selectors'
-export function matchesPolicy(p: Policy, q: string, data: Snapshot) {
-  const query = q.trim().toLowerCase()
-  return [
-    p.policy_number,
-    p.vehicle_registration || '',
-    p.insurance_company,
-    p.insurance_type,
-    fullName(data.customers.find((c) => c.id === p.customer_id)),
-  ].some(
-    (v) =>
-      v.toLowerCase().includes(query) ||
-      (/[0-9]/.test(query) &&
-        query.replace(/[^0-9]/g, '').length >= 3 &&
-        v.replace(/[^0-9]/g, '').includes(query.replace(/[^0-9]/g, ''))),
-  )
-}
+import { matchesPolicy } from '@/domain/search'
+export { matchesPolicy } from '@/domain/search'
 export function Policies() {
   const { data } = useData()
   const edit = useEditors()
