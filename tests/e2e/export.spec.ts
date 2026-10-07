@@ -55,8 +55,17 @@ test('Excel export downloads real XLSX with selected sheets, safe cells and prot
         expect(cell.l).toBeUndefined()
       }
   }
-  expect(workbook.Sheets['לקוחות'].E2.t).toBe('s')
-  expect(workbook.Sheets['לקוחות'].E2.v).toMatch(/^0/)
+  const identityCells = Object.entries(workbook.Sheets['לקוחות'])
+    .filter(([address]) => /^E\d+$/.test(address) && address !== 'E1')
+    .map(([, cell]) => cell)
+  expect(identityCells).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        t: 's',
+        v: process.env.E2E_LIVE === 'true' ? '000009990' : '000000001',
+      }),
+    ]),
+  )
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
     page.viewportSize()!.width + 1,
   )
