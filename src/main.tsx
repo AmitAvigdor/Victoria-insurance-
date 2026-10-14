@@ -2,7 +2,10 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './app/App'
+import { installAppGestureGuard } from './lib/app-gestures'
 import './index.css'
+const stopAppGestureGuard = installAppGestureGuard()
+if (import.meta.hot) import.meta.hot.dispose(stopAppGestureGuard)
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>

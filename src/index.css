@@ -35,6 +35,10 @@
 body {
   margin: 0;
 }
+html[data-installed-app],
+html[data-installed-app] body {
+  touch-action: pan-x pan-y;
+}
 button,
 input,
 select,
@@ -1607,6 +1611,14 @@ th {
 }
 
 /* Daily work and mobile renewal cards */
+@media (max-width: 800px) {
+  :root input:not([type='checkbox']):not([type='radio']),
+  :root select,
+  :root textarea {
+    font-size: 1rem;
+  }
+}
+
 .workflow-section {
   margin-top: 22px;
 }
