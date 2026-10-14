@@ -4,13 +4,14 @@ import { readImportWorkbook } from './import-workbook'
 import {
   headersFor,
   detectImportMode,
+  detectHeaderRow,
   importPremium,
   prepareImport,
   suggestMapping,
   type ImportMode,
   type ImportOptions,
 } from './import'
-import type { Customer, CustomerInput, Policy, PolicyInput, Snapshot } from './types'
+import type { Customer, CustomerInput, Policy, PolicyInput, Snapshot, TaskInput } from './types'
 import { executeImport } from '@/services/import'
 import type { Repository } from '@/services/repository'
 
@@ -96,6 +97,17 @@ function memoryRepository(snapshot: Snapshot) {
       }
       snapshot.policies.push(p)
       return p
+    }),
+    saveTask: vi.fn(async (input: TaskInput) => {
+      const task = {
+        ...input,
+        id: crypto.randomUUID(),
+        agency_id: 'agency',
+        created_at: '',
+        updated_at: '',
+      }
+      snapshot.tasks.push(task)
+      return task
     }),
   }
   return { repository: repository as unknown as Repository, calls: repository }
@@ -636,6 +648,346 @@ describe('Reviewed updates of existing records', () => {
         () => false,
       ),
     ).rejects.toThrow('הנתונים במערכת השתנו')
+  })
+})
+
+const reportHeaders = [
+  'שם משפחה',
+  'שם פרטי',
+  'חברה מבטחת',
+  'תאריך התחלה',
+  'תאריך סיום',
+  'סוג ביטוח',
+  'פרמיה מקיף',
+  'פרמיה חובה',
+  'סה"כ (מחושב מהשתיים)',
+  'מספר רישוי',
+  'רכב',
+  'תאריך מייל ראשון',
+  'הערות / לבדיקה',
+]
+const reportRow = [
+  'בדיקה',
+  'דנה',
+  'מבטח בדיקה',
+  '2026-01-01',
+  '2026-12-31',
+  'ביטוח רכב',
+  2000.5,
+  1000,
+  3000.5,
+  '00123456',
+  'רכב בדיקה',
+  '2026-10-14',
+  'מידע מקור',
+]
+describe('Supplied policy report structures', () => {
+  it('detects report headers after title rows and maps separate premiums', () => {
+    const config = options([['דוח'], [], reportHeaders, reportRow], 'report', 2)
+    expect(detectHeaderRow(config.sheet)).toBe(2)
+    expect(detectImportMode(reportHeaders)).toBe('report')
+    expect(config.mapping).toMatchObject({
+      insurance_company: 2,
+      comprehensive_value: 6,
+      compulsory_value: 7,
+      premium: 8,
+      policy_notes: 12,
+    })
+    const row = prepareImport(config, empty()).rows[0]
+    expect(row.action).toBe('ready')
+    expect(row.customer).toMatchObject({
+      first_name: 'דנה',
+      last_name: 'בדיקה',
+      identification_number: '',
+      phone: '',
+    })
+    expect(row.policy).toMatchObject({
+      insurance_type: 'רכב',
+      policy_number: '',
+      premium: 3000.5,
+      vehicle_registration: '00123456',
+      compulsory_value: '1000',
+      comprehensive_value: '2000.5',
+    })
+    expect(row.policy?.notes).toContain('רכב: רכב בדיקה')
+    expect(row.policy?.notes).toContain('תאריך מייל ראשון: 2026-10-14')
+  })
+  it('creates a customer and completion task with every source cell when the insurer/end date is absent', () => {
+    const data = [...reportRow]
+    data[2] = ''
+    data[4] = ''
+    data[8] = ''
+    const row = prepareImport(options([reportHeaders, data], 'report'), empty()).rows[0]
+    expect(row.action).toBe('ready')
+    expect(row.policy).toBeUndefined()
+    expect(row.task?.description).toContain('חברה מבטחת; תאריך סיום')
+    expect(row.task?.description).toContain('פרמיה מקיף: 2000.5')
+    expect(row.task?.description).toContain('הערות / לבדיקה: מידע מקור')
+    expect(row.customer).toBeDefined()
+  })
+  it('keeps missing totals blank and preserves zero without summing coverage', () => {
+    const data = [...reportRow]
+    data[8] = ''
+    expect(
+      prepareImport(options([reportHeaders, data], 'report'), empty()).rows[0].policy?.premium,
+    ).toBeNull()
+    data[8] = 0
+    expect(
+      prepareImport(options([reportHeaders, data], 'report'), empty()).rows[0].policy?.premium,
+    ).toBe(0)
+  })
+  it('supports the other-insurance sheet, surname-first names and known type aliases', () => {
+    const headers = [
+      'שם משפחה ושם פרטי (כפי שמופיע בנושא)',
+      'חברה מבטחת',
+      'תאריך התחלה',
+      'תאריך סיום',
+      'סוג ביטוח',
+      'פרמיה לתשלום',
+      'מספר פוליסה',
+      'תאריך מייל',
+      'נושא המייל',
+      'הערות / לבדיקה',
+    ]
+    expect(detectImportMode(headers)).toBe('report')
+    for (const [sourceType, targetType] of [
+      ['ביטוח דירה/מבנה', 'דירה'],
+      ['ביטוח בריאות', 'בריאות'],
+      ['ביטוח עסק', 'עסק'],
+      ['אחריות מקצועית', 'אחר'],
+    ]) {
+      const row = prepareImport(
+        options(
+          [
+            headers,
+            [
+              'בדיקה דנה',
+              'מבטח',
+              '2026-01-01',
+              '2026-12-31',
+              sourceType,
+              1200,
+              '000777',
+              'Wed, 14 Oct 2026',
+              'נושא מקורי',
+              'הערה',
+            ],
+          ],
+          'report',
+        ),
+        empty(),
+      ).rows[0]
+      expect(row.customer).toMatchObject({ first_name: 'דנה', last_name: 'בדיקה' })
+      expect(row.policy).toMatchObject({ insurance_type: targetType, policy_number: '000777' })
+      expect(row.policy?.notes).toContain(`סוג ביטוח: ${sourceType}`)
+      expect(row.policy?.notes).toContain('נושא המייל: נושא מקורי')
+    }
+  })
+  it('imports the customer roster without fabricating policies or completion tasks', () => {
+    const headers = [
+      'שם לקוח (משפחה פרטי)',
+      'בטווח דוח 2026',
+      'סוגי ביטוח שזוהו',
+      'וריאציות שם שנמצאו',
+      'הערות',
+    ]
+    expect(detectImportMode(headers)).toBe('report')
+    const row = prepareImport(
+      options([headers, ['בדיקה דנה', 'כן', 'רכב, ביטול', 'בדיקה דנה', '']], 'report'),
+      empty(),
+    ).rows[0]
+    expect(row.customer).toBeDefined()
+    expect(row.policy).toBeUndefined()
+    expect(row.task).toBeUndefined()
+    expect(row.customer?.notes).toContain('סוגי ביטוח שזוהו: רכב, ביטול')
+  })
+  it('does not merge existing same-name customers and only groups rows after an explicit choice', () => {
+    const second = [...reportRow]
+    second[9] = '77788899'
+    const config = options([reportHeaders, reportRow, second], 'report')
+    expect(prepareImport(config, empty()).rows.filter((r) => r.customer)).toHaveLength(2)
+    expect(
+      prepareImport({ ...config, groupReportNames: true }, empty()).rows.filter((r) => r.customer),
+    ).toHaveLength(1)
+    const snapshot = empty()
+    snapshot.customers.push({ ...record(), first_name: 'דנה', last_name: 'בדיקה' })
+    expect(
+      prepareImport({ ...config, groupReportNames: true }, snapshot).rows[0].customer,
+    ).toBeDefined()
+  })
+  it('does not generate a policy or change an existing policy for cancellation/unknown types', async () => {
+    const config = options([reportHeaders, reportRow], 'report')
+    const snapshot = empty(),
+      { repository } = memoryRepository(snapshot)
+    await executeImport(repository, config, prepareImport(config, snapshot), vi.fn(), () => false)
+    const cancel = [...reportRow]
+    cancel[5] = 'ביטול'
+    const cancellation = { ...options([reportHeaders, cancel], 'report'), updateExisting: true }
+    const row = prepareImport(cancellation, snapshot).rows[0]
+    expect(row.policy).toBeUndefined()
+    expect(row.task?.title).toContain('בדיקת ביטול')
+    expect(row.updates).toEqual([])
+    const unknown = [...reportRow]
+    unknown[5] = 'סוג לא מוכר'
+    expect(
+      prepareImport(options([reportHeaders, unknown], 'report'), empty()).rows[0].task,
+    ).toBeDefined()
+  })
+  it('safely retries complete/incomplete rows and catches errors rather than dropping source data', async () => {
+    const incomplete = [...reportRow]
+    incomplete[2] = ''
+    incomplete[4] = ''
+    incomplete[9] = '99900000'
+    const config = options([reportHeaders, reportRow, incomplete], 'report')
+    const snapshot = empty(),
+      { repository } = memoryRepository(snapshot)
+    const result = await executeImport(
+      repository,
+      config,
+      prepareImport(config, snapshot),
+      vi.fn(),
+      () => false,
+    )
+    expect(result).toMatchObject({ customers: 2, policies: 1, tasks: 1 })
+    snapshot.tasks[0].status = 'הושלמה'
+    snapshot.tasks[0].title = 'כותרת מתוקנת'
+    expect(prepareImport(config, snapshot).rows.map((r) => r.action)).toEqual(['skip', 'skip'])
+    const bad = [...reportRow]
+    bad[1] = ''
+    bad[0] = ''
+    const row = prepareImport(options([reportHeaders, bad], 'report'), empty()).rows[0]
+    expect(row.action).toBe('ready')
+    expect(row.unassignedTask).toBe(true)
+    expect(row.customer).toBeUndefined()
+    expect(row.policy).toBeUndefined()
+    expect(row.task).toBeDefined()
+    expect(row.sourceValues).toContainEqual({ label: 'מספר רישוי', value: '00123456' })
+  })
+  it('keeps invalid dates/premiums in a completion task and rejects formula errors', () => {
+    const bad = [...reportRow]
+    bad[4] = '2026-02-31'
+    bad[8] = '12,5'
+    const config = options([reportHeaders, bad], 'report')
+    const row = prepareImport(config, empty()).rows[0]
+    expect(row.action).toBe('ready')
+    expect(row.policy).toBeUndefined()
+    expect(row.task?.description).toContain('2026-02-31')
+    config.sheet.rows[1][8].error = 'נוסחה ללא ערך שמור'
+    expect(prepareImport(config, empty()).rows[0].action).toBe('error')
+  })
+  it('saves nameless rows as unassigned tasks, not as a blank-identity customer, and retries safely', async () => {
+    const snapshot = empty(),
+      { repository, calls } = memoryRepository(snapshot)
+    snapshot.customers.push({ ...record(), identification_number: '' })
+    const data = [...reportRow]
+    data[0] = ''
+    data[1] = ''
+    const config = options([reportHeaders, data], 'report')
+    const result = await executeImport(
+      repository,
+      config,
+      prepareImport(config, snapshot),
+      vi.fn(),
+      () => false,
+    )
+    expect(result).toMatchObject({ customers: 0, policies: 0, tasks: 1 })
+    expect(calls.saveTask).toHaveBeenCalledWith(
+      expect.objectContaining({ customer_id: null, policy_id: null }),
+    )
+    expect(prepareImport(config, snapshot).rows[0].action).toBe('skip')
+    const linked = prepareImport(
+      { ...config, vehicleLinks: { 2: `record:${record().id}` } },
+      snapshot,
+    ).rows[0]
+    expect(linked.unassignedTask).toBeUndefined()
+    expect(linked.customerId).toBe(record().id)
+    expect(linked.policy).toBeDefined()
+  })
+  it('retains one customer after a partial policy save failure and verifies fresh preview', async () => {
+    const snapshot = empty(),
+      { repository, calls } = memoryRepository(snapshot)
+    const config = options([reportHeaders, reportRow], 'report')
+    calls.savePolicy.mockRejectedValueOnce(new Error('connection lost'))
+    expect(
+      await executeImport(
+        repository,
+        config,
+        prepareImport(config, snapshot),
+        vi.fn(),
+        () => false,
+      ),
+    ).toMatchObject({ customers: 1, policies: 0 })
+    expect(
+      await executeImport(
+        repository,
+        config,
+        prepareImport(config, snapshot),
+        vi.fn(),
+        () => false,
+      ),
+    ).toMatchObject({ customers: 0, policies: 1 })
+    expect(calls.saveCustomer).toHaveBeenCalledTimes(1)
+  })
+  it('requires selecting an individual report update and preserves all source notes', async () => {
+    const snapshot = empty(),
+      { repository } = memoryRepository(snapshot)
+    const config = options([reportHeaders, reportRow], 'report')
+    await executeImport(repository, config, prepareImport(config, snapshot), vi.fn(), () => false)
+    const changed = [...reportRow]
+    changed[8] = 3500
+    const update = { ...options([reportHeaders, changed], 'report'), updateExisting: true }
+    expect(prepareImport(update, snapshot).rows[0].action).toBe('skip')
+    const row = prepareImport(
+      { ...update, selectedChanges: { '2:policies:premium': true } },
+      snapshot,
+    ).rows[0]
+    expect(row.updates?.[0].patch).toEqual({ premium: 3500 })
+    expect(row.changes?.find((c) => c.field === 'notes')?.after).toContain('רכב: רכב בדיקה')
+  })
+  it('keeps different ID holders separate even when name grouping is selected', () => {
+    const config = options(
+      [
+        ['תז', ...reportHeaders],
+        ['000007777', ...reportRow],
+        ['000008888', ...reportRow.slice(0, 9), '98765432', ...reportRow.slice(10)],
+      ],
+      'report',
+    )
+    const rows = prepareImport({ ...config, groupReportNames: true }, empty()).rows
+    expect(rows.map((r) => r.action)).toEqual(['ready', 'ready'])
+    expect(rows[0].customer?.import_key).not.toBe(rows[1].customer?.import_key)
+    expect(rows.map((r) => r.customer?.identification_number)).toEqual(['000007777', '000008888'])
+  })
+  it('requires explicitly confirming a name variant for the same existing policy owner', () => {
+    const snapshot = empty()
+    snapshot.customers.push(record())
+    snapshot.policies.push({
+      ...policyInput(),
+      id: 'policy',
+      agency_id: 'agency',
+      created_at: '',
+      updated_at: '',
+    })
+    const headers = [
+      'שם מלא',
+      'חברה מבטחת',
+      'מספר פוליסה',
+      'סוג ביטוח',
+      'תאריך התחלה',
+      'תאריך סיום',
+      'פרמיה לתשלום',
+    ]
+    const config = options(
+      [headers, ['שם שונה', 'חברת בדיקה', 'P-001', 'רכב', '2026-01-01', '2026-12-31', 1200]],
+      'report',
+    )
+    expect(prepareImport(config, snapshot).rows[0].action).toBe('error')
+    const row = prepareImport({ ...config, vehicleLinks: { 2: `record:${record().id}` } }, snapshot)
+      .rows[0]
+    expect(row.action).toBe('skip')
+    expect(row.customer).toBeUndefined()
+    expect(row.policy).toBeUndefined()
+    expect(row.customerId).toBe(record().id)
   })
 })
 

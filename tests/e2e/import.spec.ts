@@ -300,3 +300,105 @@ test('reviewed vehicle update saves only the checked field and keeps one policy'
   await expect(page.getByRole('dialog').getByLabel('עמלה', { exact: true })).toHaveValue('15%')
   await expect(page.getByRole('dialog').getByLabel('חובה', { exact: true })).toHaveValue('1200')
 })
+
+test('policy report → automatic mapping → incomplete and nameless tasks → safe retry and linked roster', async ({
+  page,
+}, testInfo) => {
+  await enter(page)
+  const book = utils.book_new()
+  const headers = [
+    'שם משפחה',
+    'שם פרטי',
+    'חברה מבטחת',
+    'תאריך התחלה',
+    'תאריך סיום',
+    'סוג ביטוח',
+    'פרמיה מקיף',
+    'פרמיה חובה',
+    'סה"כ (מחושב מהשתיים)',
+    'מספר רישוי',
+    'רכב',
+    'תאריך מייל ראשון',
+    'הערות / לבדיקה',
+  ]
+  const first = [
+    'בדיקתדוח',
+    'דנה',
+    'מבטח דוח',
+    '2026-01-01',
+    '2026-12-31',
+    'ביטוח רכב',
+    2000.5,
+    1000,
+    3000.5,
+    '00123456',
+    'רכב מקור',
+    '2026-10-14',
+    'בדיקה מקורית',
+  ]
+  const second = [...first]
+  second[2] = ''
+  second[4] = ''
+  second[9] = '99900000'
+  const nameless = [...first]
+  nameless[0] = ''
+  nameless[1] = ''
+  nameless[9] = '88877700'
+  utils.book_append_sheet(
+    book,
+    utils.aoa_to_sheet([['דוח ביטוחים'], headers, first, second, nameless]),
+    'פוליסות',
+  )
+  utils.book_append_sheet(
+    book,
+    utils.aoa_to_sheet([
+      ['שם לקוח (משפחה פרטי)', 'סוגי ביטוח שזוהו', 'וריאציות שם שנמצאו'],
+      ['בדיקתדוח דנה', 'רכב', 'בדיקתדוח דנה'],
+    ]),
+    'רשימת לקוחות',
+  )
+  await page.getByLabel('קובץ אקסל לייבוא', { exact: true }).setInputFiles({
+    name: 'fictional-policy-report.xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: Buffer.from(write(book, { type: 'buffer', bookType: 'xlsx' })),
+  })
+  await expect(page.getByLabel('סוג הנתונים', { exact: true })).toHaveValue('report')
+  await expect(page.getByLabel('מספר שורת הכותרות באקסל', { exact: true })).toHaveValue('2')
+  await expect(page.getByLabel('פרמיה לתשלום', { exact: true })).toHaveValue('8')
+  await page.getByRole('checkbox', { name: /בדקתי ששמות זהים בדוח/ }).check()
+  await page.getByRole('button', { name: 'בדיקה ותצוגה מקדימה', exact: true }).click()
+  await expect(page.getByText('3 שורות מוכנות', { exact: true })).toBeVisible()
+  await expect(
+    page.getByText('1 לקוחות חדשים · 1 פוליסות חדשות · 2 משימות חדשות · 0 רשומות לעדכון', {
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(page.getByRole('button', { name: 'ייבוא הנתונים', exact: true })).toBeDisabled()
+  await page.locator('summary').first().click()
+  await expect(page.locator('details').first()).toContainText('רכב מקור')
+  await expect(page.locator('details').first()).toContainText('00123456')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+    page.viewportSize()!.width + 1,
+  )
+  await page.screenshot({ path: testInfo.outputPath('policy-report-preview.png'), fullPage: true })
+  await page.getByRole('checkbox', { name: /בדקתי את ההתאמה ואת הנתונים/ }).check()
+  await page.getByRole('button', { name: 'ייבוא הנתונים', exact: true }).click()
+  await expect(
+    page.getByText('נשמרו 1 לקוחות, 1 פוליסות ו־2 משימות.', { exact: true }),
+  ).toBeVisible()
+  await page.getByRole('button', { name: 'ייבוא נוסף / ניסיון חוזר', exact: true }).click()
+  await page.getByRole('button', { name: 'בדיקה ותצוגה מקדימה', exact: true }).click()
+  await expect(page.getByText('0 שורות מוכנות', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'חזרה להתאמה', exact: true }).click()
+  await page.getByLabel('גיליון', { exact: true }).selectOption('1')
+  await page.getByRole('button', { name: 'בדיקה ותצוגה מקדימה', exact: true }).click()
+  await expect(page.getByText('0 שורות מוכנות', { exact: true })).toBeVisible()
+  await page.goto('/policies')
+  await page.getByLabel('חיפוש פוליסות', { exact: true }).fill('00123456')
+  await page.getByRole('button', { name: 'רכב 00123456', exact: true }).click()
+  await expect(page.getByRole('dialog').getByLabel('פרמיה שנתית (₪)', { exact: true })).toHaveValue(
+    '3000.5',
+  )
+  await expect(page.getByRole('dialog').getByLabel('חובה', { exact: true })).toHaveValue('1000')
+  await expect(page.getByRole('dialog').getByLabel('מקיף', { exact: true })).toHaveValue('2000.5')
+})

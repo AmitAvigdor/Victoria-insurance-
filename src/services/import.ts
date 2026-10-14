@@ -23,7 +23,11 @@ export async function executeImport(
     )
   if (fresh.errors.length) throw new Error(fresh.errors.join('; '))
   const result: ImportResult = { customers: 0, policies: 0, tasks: 0, updated: 0, rows: [] }
-  const customerIds = new Map(snapshot.customers.map((c) => [c.identification_number, c.id]))
+  const customerIds = new Map(
+    snapshot.customers
+      .filter((c) => c.identification_number)
+      .map((c) => [c.identification_number, c.id]),
+  )
   for (const customer of snapshot.customers) {
     customerIds.set(`record:${customer.id}`, customer.id)
     if (customer.import_key) customerIds.set(`import:${customer.import_key}`, customer.id)
@@ -51,7 +55,7 @@ export async function executeImport(
           saved.push('עדכון שדות שאושרו')
         }
         const customerKey = row.customerKey || row.identification
-        let customerId = customerIds.get(customerKey)
+        let customerId = row.unassignedTask ? undefined : customerIds.get(customerKey)
         if (row.customer && !customerId) {
           const customer = await repository.saveCustomer(row.customer)
           customerId = customer.id
@@ -59,14 +63,20 @@ export async function executeImport(
           result.customers++
           saved.push('לקוח')
         }
-        if (!customerId) throw new Error('הלקוח לא נשמר; לא ניתן לשייך אליו נתונים')
+        if (!customerId && !row.unassignedTask)
+          throw new Error('הלקוח לא נשמר; לא ניתן לשייך אליו נתונים')
         if (row.policy) {
+          if (!customerId) throw new Error('פוליסה דורשת שיוך ללקוח')
           await repository.savePolicy({ ...row.policy, customer_id: customerId })
           result.policies++
           saved.push('פוליסה')
         }
         if (row.task) {
-          await repository.saveTask({ ...row.task, customer_id: customerId, policy_id: null })
+          await repository.saveTask({
+            ...row.task,
+            customer_id: customerId || null,
+            policy_id: null,
+          })
           result.tasks++
           saved.push('משימה')
         }

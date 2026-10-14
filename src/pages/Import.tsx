@@ -9,6 +9,7 @@ import { Dialog } from '@/components/ui/dialog'
 import {
   fieldsFor,
   detectImportMode,
+  detectHeaderRow,
   headersFor,
   importModes,
   prepareImport,
@@ -39,6 +40,7 @@ export default function ImportPage() {
   const [vehicleLinks, setVehicleLinks] = useState<Record<number, string>>({})
   const [reviewSnapshot, setReviewSnapshot] = useState<Snapshot | null>(null)
   const [keepExtra, setKeepExtra] = useState(true)
+  const [groupReportNames, setGroupReportNames] = useState(false)
   const [step, setStep] = useState<'configure' | 'preview' | 'result'>('configure')
   const [busy, setBusy] = useState(false)
   const [reading, setReading] = useState(false)
@@ -78,6 +80,7 @@ export default function ImportPage() {
         mode,
         mapping,
         keepExtra,
+        groupReportNames,
         vehicleLinks,
         updateExisting,
         selectedChanges,
@@ -88,8 +91,9 @@ export default function ImportPage() {
   const invalid = plan.rows.filter((row) => row.action === 'error').length
   const skipped = plan.rows.filter((row) => row.action === 'skip').length
 
-  function selectSheet(index: number, header = 0, chosenMode?: ImportMode) {
+  function selectSheet(index: number, selectedHeader?: number, chosenMode?: ImportMode) {
     const selected = sheets[index]
+    const header = selectedHeader ?? detectHeaderRow(selected)
     const nextMode = chosenMode || detectImportMode(headersFor(selected, header), mode)
     setVehicleLinks({})
     setSelectedChanges({})
@@ -149,10 +153,7 @@ export default function ImportPage() {
       if (!parsed.length) throw new Error('הקובץ אינו מכיל גיליונות')
       setSheets(parsed)
       setSheetIndex(0)
-      const firstHeader = Math.max(
-        0,
-        parsed[0].rows.findIndex((row) => row.some((cell) => cell.text.trim())),
-      )
+      const firstHeader = detectHeaderRow(parsed[0])
       setHeaderRow(firstHeader)
       const detectedMode = detectImportMode(headersFor(parsed[0], firstHeader), mode)
       setMode(detectedMode)
@@ -373,6 +374,8 @@ export default function ImportPage() {
               <p className="small">
                 {updateExisting ? (
                   'מצב עדכון: בדקו את הערך הקודם והחדש וסמנו רק שדות שברצונכם לשנות. אין איחוד אוטומטי לפי שם. שינוי תאריך סיום בביטוח רכב דורש בחירת פוליסה קיימת; תקופה חדשה עם תאריך התחלה חדש תיצור ביטוח נוסף.'
+                ) : mode === 'report' ? (
+                  'המסלול מזהה את גיליונות הדוח שלך: ביטוחי רכב, ביטוחים נוספים ורשימת לקוחות. אפשר לייבא ללא ת״ז או טלפון. פרטי ביטוח חסרים ורשומות ביטול ייצרו משימת בדיקה במקום פוליסה. פרמיה כוללת תילקח רק מעמודת הסכום; חובה ומקיף יישמרו בנפרד. פרטי הרכב, המייל וההערות יישמרו בהערות.'
                 ) : mode === 'vehicles' ? (
                   'המסלול מותאם לקובץ שלך: שם המבוטח, חברת הביטוח, תחילת הביטוח, סיום הביטוח, חובה, מקיף, מספר רישוי, עמלה והערות. אין צורך בת״ז, טלפון או מספר פוליסה. חובה, מקיף ועמלה יישמרו כפי שמופיעים בקובץ, בלי חישוב פרמיה או המרת אחוזים. כל שורה תיצור רשומת ביטוח רכב אחת. ניתן לשייך מבוטחים בשלב הבדיקה.'
                 ) : (
@@ -383,6 +386,23 @@ export default function ImportPage() {
                   </>
                 )}
               </p>
+              {mode === 'report' && (
+                <div className="import-note">
+                  <label className="import-check">
+                    <input
+                      type="checkbox"
+                      checked={groupReportNames}
+                      onChange={(e) => setGroupReportNames(e.target.checked)}
+                    />
+                    בדקתי ששמות זהים בדוח שייכים לאותו לקוח — לשייך אותם ללקוח אחד
+                  </label>
+                  <p className="small">
+                    ללא הסימון אפשר לשייך כל שורה ידנית בבדיקה. הסימון חל גם על ייבואים קודמים מאותו
+                    מסלול שהשתמשו בו, ואינו מאחד לקוחות קיימים שנוצרו במסלולים אחרים. אל תסמנו אם יש
+                    אנשים שונים בעלי אותו שם. ודאו שפיצול שם משפחה ופרטי נכון.
+                  </p>
+                </div>
+              )}
               <div className="import-mapping">
                 {fieldsFor(mode).map(([key, label]) => (
                   <label className="field" key={key}>
@@ -430,14 +450,22 @@ export default function ImportPage() {
                       onChange={(e) => setKeepExtra(e.target.checked)}
                     />
                     שמירת עמודות נוספות בהערות{' '}
-                    {mode === 'policies' || mode === 'vehicles'
-                      ? 'הפוליסה'
-                      : mode === 'tasks'
-                        ? 'המשימה'
-                        : 'הלקוח החדש'}
+                    {mode === 'report'
+                      ? 'הרשומה ומשימת ההשלמה'
+                      : mode === 'policies' || mode === 'vehicles'
+                        ? 'הפוליסה'
+                        : mode === 'tasks'
+                          ? 'המשימה'
+                          : 'הלקוח החדש'}
                   </label>
                   <p className="small">{extras.join(' · ')}</p>
-                  {!keepExtra && <p>המידע בעמודות האלו לא יישמר.</p>}
+                  {!keepExtra && (
+                    <p>
+                      {mode === 'report'
+                        ? 'העמודות האלו לא יישמרו בהערות הלקוח או הפוליסה. במשימות השלמה נשמרת תמיד השורה המלאה כדי לאפשר בדיקה.'
+                        : 'המידע בעמודות האלו לא יישמר.'}
+                    </p>
+                  )}
                 </div>
               )}
               <label className="import-check import-note">
@@ -478,7 +506,9 @@ export default function ImportPage() {
             {ready.reduce((n, r) => n + (r.updates?.length || 0), 0)} רשומות לעדכון
           </p>
           <p className="import-note">
-            {mode === 'vehicles' ? (
+            {mode === 'report' ? (
+              'בדקו את השיוך והפרטים לפני האישור. לקוחות ללא ת״ז אינם מאוחדים אוטומטית עם לקוחות קיימים לפי שם. פרטים חסרים יישמרו במשימת השלמה, ולא יומצאו תאריכים או סכומים. שורות ללא שם יישמרו כמשימות בדיקה ללא לקוח; אפשר לבחור עבורן לקוח קיים. פוליסות ומשימות שנשמרו בייבוא קודם ידולגו; רק שדות שסומנו במצב עדכון ישתנו.'
+            ) : mode === 'vehicles' ? (
               'רשומות קיימות לא יעודכנו. ללא ת״ז לא מאחדים מבוטחים לפי שם: ברירת המחדל היא לקוח חדש לכל שורה חדשה. אפשר לבחור למטה לקוח קיים או מבוטח משורה קודמת. ייבוא חוזר של אותו שם מבוטח, רכב, חברה ותקופת ביטוח ידולג. שורות עם שגיאות לא יישמרו.'
             ) : (
               <>
@@ -510,7 +540,7 @@ export default function ImportPage() {
                       <tr key={row.rowNumber}>
                         <td>{row.rowNumber}</td>
                         <td>
-                          {row.name}
+                          {row.name || 'לא צוין שם לקוח'}
                           <br />
                           <span className="ltr">
                             {mode === 'vehicles'
@@ -536,7 +566,7 @@ export default function ImportPage() {
                           </Badge>
                         </td>
                         <td>
-                          {mode === 'vehicles' && row.action !== 'skip' && (
+                          {(mode === 'vehicles' || mode === 'report') && row.action !== 'skip' && (
                             <label className="field">
                               <span>שיוך המבוטח</span>
                               <select
@@ -546,7 +576,9 @@ export default function ImportPage() {
                                 onChange={(e) => changeVehicleLink(row.rowNumber, e.target.value)}
                               >
                                 <option value="">
-                                  ללא שיוך ידני — לקוח חדש או המשך ייבוא קודם
+                                  {row.unassignedTask
+                                    ? 'ללא שיוך — משימת בדיקה ללא לקוח'
+                                    : 'ללא שיוך ידני — לקוח חדש או המשך ייבוא קודם'}
                                 </option>
                                 <optgroup label="מבוטחים משורות קודמות">
                                   {plan.rows
@@ -654,6 +686,19 @@ export default function ImportPage() {
                               {row.action === 'ready' ? 'הנתונים שיישמרו' : 'פרטים לבדיקה'}
                             </summary>
                             {row.action !== 'ready' && <p>לא יישמרו נתונים משורה זו.</p>}
+                            {!!row.sourceValues?.length && (
+                              <section>
+                                <h3>השורה המקורית בדוח</h3>
+                                <dl className="import-details">
+                                  {row.sourceValues.map((cell, i) => (
+                                    <div key={i}>
+                                      <dt>{cell.label}</dt>
+                                      <dd>{cell.value}</dd>
+                                    </div>
+                                  ))}
+                                </dl>
+                              </section>
+                            )}
                             {[
                               { title: 'לקוח חדש', values: row.customer },
                               { title: 'פוליסה חדשה', values: row.policy },
@@ -670,6 +715,7 @@ export default function ImportPage() {
                                           <div key={key}>
                                             <dt>
                                               {{ status: 'סטטוס', notes: 'הערות' }[key] ||
+                                                fieldsFor('tasks').find(([k]) => k === key)?.[1] ||
                                                 fieldsFor(mode).find(([k]) => k === key)?.[1] ||
                                                 fieldsFor('combined').find(
                                                   ([k]) => k === key,
