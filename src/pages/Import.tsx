@@ -634,24 +634,29 @@ export default function ImportPage() {
                               </select>
                             </label>
                           )}
-                          {updateExisting && !!row.policyCandidates?.length && (
-                            <label className="field">
-                              <span>עדכון פוליסת רכב קיימת (במקום יצירה חדשה)</span>
-                              <select
-                                className="field-control"
-                                aria-label={`פוליסה לעדכון בשורה ${row.rowNumber}`}
-                                value={vehiclePolicyLinks[row.rowNumber] || ''}
-                                onChange={(e) => changePolicyLink(row.rowNumber, e.target.value)}
-                              >
-                                <option value="">לפי זיהוי הייבוא / יצירה חדשה</option>
-                                {row.policyCandidates.map((p) => (
-                                  <option key={p.id} value={p.id}>
-                                    {p.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                          )}
+                          {(updateExisting || mode === 'report') &&
+                            !!row.policyCandidates?.length && (
+                              <label className="field">
+                                <span>
+                                  {mode === 'report'
+                                    ? 'בחירת הפוליסה הקיימת שאליה מתייחס הדוח'
+                                    : 'עדכון פוליסת רכב קיימת (במקום יצירה חדשה)'}
+                                </span>
+                                <select
+                                  className="field-control"
+                                  aria-label={`פוליסה לעדכון בשורה ${row.rowNumber}`}
+                                  value={vehiclePolicyLinks[row.rowNumber] || ''}
+                                  onChange={(e) => changePolicyLink(row.rowNumber, e.target.value)}
+                                >
+                                  <option value="">לפי זיהוי הייבוא / יצירה חדשה</option>
+                                  {row.policyCandidates.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            )}
                           {!!row.changes?.length && (
                             <section className="import-changes">
                               <h3>שינויים לאישור — לפני ואחרי</h3>

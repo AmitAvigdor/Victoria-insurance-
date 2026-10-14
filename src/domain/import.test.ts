@@ -989,6 +989,53 @@ describe('Supplied policy report structures', () => {
     expect(row.policy).toBeUndefined()
     expect(row.customerId).toBe(record().id)
   })
+  it('recognizes a vehicle policy created through an earlier import or manually without generating another policy', () => {
+    const snapshot = empty(),
+      config = options([reportHeaders, reportRow], 'report')
+    const proposed = prepareImport(config, snapshot).rows[0]
+    snapshot.customers.push({ ...record(), ...proposed.customer! })
+    snapshot.policies.push({
+      ...proposed.policy!,
+      import_key: 'vehicle-v1-previous',
+      id: 'old-policy',
+      agency_id: 'agency',
+      customer_id: record().id,
+      created_at: '',
+      updated_at: '',
+    })
+    const row = prepareImport(config, snapshot).rows[0]
+    expect(row.action).toBe('skip')
+    expect(row.customerId).toBe(record().id)
+    expect(row.customer).toBeUndefined()
+    expect(row.policy).toBeUndefined()
+    snapshot.policies[0].start_date = '2025-01-01'
+    expect(prepareImport(config, snapshot).rows[0].policy).toBeDefined()
+  })
+  it('requires an explicit policy choice when several existing vehicle policies match the report period', () => {
+    const snapshot = empty(),
+      config = options([reportHeaders, reportRow], 'report')
+    const proposed = prepareImport(config, snapshot).rows[0]
+    snapshot.customers.push({ ...record(), ...proposed.customer! })
+    for (const id of ['policy-a', 'policy-b'])
+      snapshot.policies.push({
+        ...proposed.policy!,
+        import_key: undefined,
+        id,
+        agency_id: 'agency',
+        customer_id: record().id,
+        created_at: '',
+        updated_at: '',
+      })
+    const ambiguous = prepareImport(config, snapshot).rows[0]
+    expect(ambiguous.action).toBe('error')
+    expect(ambiguous.policyCandidates).toHaveLength(2)
+    expect(
+      prepareImport({ ...config, vehiclePolicyLinks: { 2: 'policy-a' } }, snapshot).rows[0].action,
+    ).toBe('skip')
+    expect(
+      prepareImport({ ...config, vehiclePolicyLinks: { 2: 'unrelated' } }, snapshot).rows[0].action,
+    ).toBe('error')
+  })
 })
 
 describe('Vehicle update matching', () => {

@@ -26,6 +26,9 @@ reviewed and imported separately through the existing protected import screen.
 - Existing-policy ownership cannot be changed. A source name variant requires
   explicitly selecting the existing owner. Existing updates require selecting
   individual fields and pass the existing server validation/conflict checks.
+- Numberless vehicle rows also recognize a policy created manually or by an older
+  import when insurer, registration and both period dates match. Multiple matching
+  policies require explicit selection instead of creating another policy.
 - Source row identities and task provenance prevent exact retries from adding
   duplicates. Changing identifying fields can require manual linkage. No fuzzy
   name matching is performed, and edited/removed task provenance is not recoverable
@@ -37,7 +40,7 @@ uploaded to the database or added to Git. Browser tests use fictional fixtures.
 
 ## Verification
 
-- All 68 unit tests pass, including 14 report cases covering amounts, missing
+- All 70 unit tests pass, including 16 report cases covering amounts, missing
   fields, type aliases, unassigned tasks, ownership, retries and reviewed updates.
 - Production build/TypeScript, lint, formatting and whitespace checks pass.
 - 18 existing desktop/mobile browser scenarios passed; 4 hosted-only cases were

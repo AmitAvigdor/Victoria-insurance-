@@ -530,13 +530,38 @@ function prepareReportImport(options: ImportOptions, snapshot: Snapshot): Import
     })
     if (mapping.last_first_name != null)
       row.warnings.push('השם בדוח הוא משפחה ואז פרטי. בדקו את הפיצול; השם המקורי יישמר בהערות.')
-    const previousPolicy = snapshot.policies.find(
+    const matchingPolicies = snapshot.policies.filter(
       (p) =>
         (number &&
           company &&
           policyKey(p) === policyKey({ insurance_company: company, policy_number: number })) ||
-        p.import_key === policyImportKey,
+        p.import_key === policyImportKey ||
+        (!number &&
+          registration &&
+          type === 'רכב' &&
+          p.insurance_type === 'רכב' &&
+          p.vehicle_registration?.replace(/[\s-]/g, '') === registration.replace(/[\s-]/g, '') &&
+          p.insurance_company === company &&
+          p.start_date === start &&
+          p.end_date === end),
     )
+    const selectedPolicy = options.vehiclePolicyLinks?.[rowNumber]
+    const previousPolicy = selectedPolicy
+      ? matchingPolicies.find((p) => p.id === selectedPolicy)
+      : matchingPolicies.length === 1
+        ? matchingPolicies[0]
+        : undefined
+    if (selectedPolicy && !previousPolicy) row.errors.push('הפוליסה שנבחרה אינה תואמת לפרטי השורה')
+    if (matchingPolicies.length > 1) {
+      row.policyCandidates = matchingPolicies.map((p) => ({
+        id: p.id,
+        label: `${fullName(byId.get(p.customer_id))} · ${p.policy_number || p.vehicle_registration} · ${p.start_date}–${p.end_date}`,
+      }))
+      if (!selectedPolicy)
+        row.errors.push(
+          'נמצאו כמה פוליסות מתאימות. בחרו את הפוליסה הקיימת לפני הייבוא; לא תיווצר כפילות.',
+        )
+    }
     row.existingPolicyId = previousPolicy?.id
     let existing = identification ? byIdentity.get(identification) : byImport.get(customerImportKey)
     if (previousPolicy) {
